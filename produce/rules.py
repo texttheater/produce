@@ -80,14 +80,14 @@ def parse_target(target, line):
 def up_to_date(target, prereqs):
     try:
         tstat = os.stat(target)
-    except OSError, e:
+    except OSError as e:
         if e.errno == errno.ENOENT:
             return False
         raise UserError('cannot stat %s [Errno %d]' % (target, e.errno))
     for prereq in prereqs:
         try:
             pstat = os.stat(prereq)
-        except OSError, e:
+        except OSError as e:
             if e.errno == errno.ENOENT:
                 continue
             raise UserError('cannot stat %s [Errno %d]' % (prereq, e.errno))

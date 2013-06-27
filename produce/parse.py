@@ -17,7 +17,7 @@ def parse_producefile():
     try:
         with open('Producefile') as f:
             return map(rule, blocks(f))
-    except IOError, e:
+    except IOError as e:
         raise exceptions.UserError('Could not read Producefile: %s' % e)
 
 class Block:

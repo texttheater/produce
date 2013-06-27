@@ -17,6 +17,6 @@ if __name__ == '__main__':
     try:
         rules = parse.parse_producefile()
         produce(target, rules)
-    except exceptions.UserError, e:
+    except exceptions.UserError as e:
         logging.error(e)
         sys.exit(1)
