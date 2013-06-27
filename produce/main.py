@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 
+import exceptions
+import logging
 import parse
 import sys
+
+logging.basicConfig(level=logging.INFO)
 
 def produce(target, rules):
     for rule in rules:
@@ -10,5 +14,9 @@ def produce(target, rules):
 
 if __name__ == '__main__':
     _, target = sys.argv
-    rules = parse.parse_producefile()
-    produce(target, rules)
+    try:
+        rules = parse.parse_producefile()
+        produce(target, rules)
+    except exceptions.UserError, e:
+        logging.error(e)
+        sys.exit(1)
