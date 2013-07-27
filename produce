@@ -1,0 +1,67 @@
+#!/usr/bin/env python3
+
+import re
+
+from itertools import chain
+
+avpattern = re.compile(r'^([A-Za-z0-9-_]+): (.*)$')
+
+class Rule:
+
+    def __init__(self, target, prereqs, recipe, att2line):
+        self.target = target
+        self.prereqs = prereqs
+        self.recipe = recipe
+        self.att2line = att2line
+
+    def produce(target):
+        match = self.target.match(target)
+        if not match:
+            return False
+        prereqs = map(instantiate_pattern, self.prereqs)
+        for prereq in prereqs:
+            produce(prereq)
+            # TODO If we want to delete intermediate files, we need a more
+            # intelligent algorithm
+            if not up_to_date(target, prereqs):
+                recipe = instantiate_pattern(recipe)
+                subprocess.call(recipe, shell=True) # TODO specify which shell
+                if not up_to_date(target, prereqs):
+                    die('recipe failed to update %s ' % target)
+
+class RuleSpecification:
+
+    def __init__(self):
+        self.attributes = {}
+
+    def add_attribute_value(self, att, value):
+        if not att in self.attributes:
+            self.attributes[att] = []
+        self.attributes[att].append(value)
+
+    def __nonzero__(self):
+        return self.attributes
+
+class AttributeValue:
+
+    def __init__(self, line, value):
+        self.line = line
+        self.value = value
+
+def read_rule_specifications():
+    line = 0
+    spec = RuleSpecification()
+    with open('produce.cfg') as f:
+        for line in chain(f, ['']):
+            line += 1
+            line = line.rstrip()
+            if not line:
+                if spec:
+                    yield spec
+                    spec = RuleSpecification()
+                continue
+            match = avpattern.match(line)
+            if not match:
+                raise ProduceFileException(line, 'cannot parse line')
+            value = AttributeValue(line, match.group(2)) # TODO types
+            spec.add_attribute_value(match.group(1), value)
