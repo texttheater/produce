@@ -1,0 +1,16 @@
+#!/bin/bash
+
+# This script uses produce to run all experiments in this project.
+# A planned feature for produce, dependency globbing, will make this script
+# obsolete. Then it will just be a matter of running 'produce all'.
+
+for corpus in english italian
+do
+	for fset in codecat7 codecat11 ngrams7 ngrams11
+	do
+		for portion in dev test
+		do
+			produce out/$corpus.$portion.$fset.eval
+		done
+	done
+done

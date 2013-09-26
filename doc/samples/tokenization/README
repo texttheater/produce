@@ -1,0 +1,68 @@
+This is an example project to illustrate the use of Produce. It contains the
+code to run several machine learning experiments for detecting token and
+sentence boundaries in running text.
+
+Two datasets are included, one with English text from the Groningen Meaning
+Bank [1] and one with Italian text from the PAISÀ corpus [2]. These datasets
+can be freely redistributed under their respective license terms. They are
+already split into train, dev and test portions. Their paths follow the
+following scheme, where %{...} are placeholders:
+
+data/%{corpus}.%{portion}.iob
+
+IOB is a two-column file format where empty lines indicate document boundaries
+and each nonempty line represents one character within a document. The first
+column contains the Unicode codepoint of the character as a decimal number, the
+second column contains one of four labels:
+
+O for characters that are not part of tokens, such as whitespace characters.
+S for characters that mark the beginning of a sentence.
+T for other characters that mark the beginning of a token.
+I for other characters that are part of a token.
+
+The goal of the experiments is to learn models that automatically assign
+these labels to unseen and unlabeled text. We use the Wapiti software [3] to
+learn CRF models. This software must be installed and on your PATH before you
+can proceed.
+
+We want to use different feature sets in training and compare their performance
+on the dev, and eventually test, portions of the datasets. An evaluation script
+automatically evaluates the trained model's outputs against the gold standard.
+The end product of the experiments are thus performance reports in files
+following this naming scheme, where %{portion} is one of dev and test, and
+%{fset} is the name of a feature set:
+
+out/%{corpus}.%{portion}.%{fset}.eval
+
+A number of intermediate files must be produced to arrive at this result:
+
+out/%{corpus}.%{portion}.feat
+    An enriched version of the labeled data, containing additional column with
+    features for each unit. We only use one additional feature type, namely
+    Unicode character category. This is input to Wapiti in both training and
+    labelling. The gold-standard labels included are ignored in labelling.
+patterns/%{fset}.wappat
+    A Wapiti pattern file, specifying the feature set to be used in training.
+    These files are generated from corresponding files with the extension
+    waptmp, which have a more concise and human-readable format.
+out/%{corpus}.train.%{fset}.model
+    A model in Wapiti format, trained on the training portion of the specified
+    corpus, using the specified feature set.
+out/%{corpus}.%{portion}.%{fset}.labeled
+    Like the .feat file, but with the labels assigned by the specified model
+    added. This is the input to the evaluation script that generated the .eval
+    file.
+
+How to generate these files and what their dependencies are is specified in
+produce.ini - have a look! produce takes care of everything from there. For
+example, to train and evaluate a model with the ngrams11 feature set on the
+English data, run:
+
+$ produce out/english.dev.ngrams11.eval out/english.test.ngrams11.eval
+
+The included script "run-experiments" runs all possible experiments in a
+batch.
+
+[1] http://gmb.let.rug.nl/
+[2] http://www.corpusitaliano.it/
+[3] http://wapiti.limsi.fr/

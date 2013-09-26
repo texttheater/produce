@@ -1,67 +1,374 @@
 #!/usr/bin/env python3
 
+import errno
+import logging
+import os
 import re
+import subprocess
+import sys
+import time
 
-from itertools import chain
+from collections import OrderedDict
+from configparser import ConfigParser
 
-avpattern = re.compile(r'^([A-Za-z0-9-_]+): (.*)$')
+### PLANNED FEATURES
 
-class Rule:
+# TODO variation on the file rule type that unconditionally runs the recipe
+# but with a temp file with target, then percolates dirtiness only if the new
+# file differs from the existing version
+# TODO full Python expressions with access to all vars for interpolations
+# TODO dependency globbing using Python expressions that evaluate to sequences,
+# wrapped in %@{...}
+# TODO flat producing: run the recipe of the target, touch all existing
+# dependencies
+# TODO optionally delete intermediate files
 
-    def __init__(self, target, prereqs, recipe, att2line):
-        self.target = target
-        self.prereqs = prereqs
-        self.recipe = recipe
-        self.att2line = att2line
+### UTILITIES
 
-    def produce(target):
-        match = self.target.match(target)
-        if not match:
-            return False
-        prereqs = map(instantiate_pattern, self.prereqs)
-        for prereq in prereqs:
-            produce(prereq)
-            # TODO If we want to delete intermediate files, we need a more
-            # intelligent algorithm
-            if not up_to_date(target, prereqs):
-                recipe = instantiate_pattern(recipe)
-                subprocess.call(recipe, shell=True) # TODO specify which shell
-                if not up_to_date(target, prereqs):
-                    die('recipe failed to update %s ' % target)
+def dedup(seq):
+    """Deduplicates a sequence - courtesy of
+    http://www.peterbe.com/plog/uniqifiers-benchmark"""
+    seen = set()
+    seen_add = seen.add
+    return [x for x in seq if not x in seen and not seen_add(x)]
 
-class RuleSpecification:
+def mtime(path, default=0):
+    """Returns the mtime of the file at the specified path. Returns default if
+    file does not exist. An OSError is raised if the file cannot be stat'd."""
+    try:
+        return os.stat(path).st_mtime
+    except OSError as e:
+        if e.errno == errno.ENOENT:
+            return default
+        raise e
+
+def now():
+    return time.time()
+
+### ERRORS
+
+class ProduceError(Exception):
+
+    def __init__(self, message, cause=None):
+        Exception.__init__(self, message)
+        self.cause = cause
+
+### PRODUCEFILE PARSING
+
+def preprocess_producefile(f):
+    for line in f:
+        if line.startswith('[]'):
+            yield '[%GLOBALS]' + line[2:]
+        elif line.startswith('[%GLOBALS]'):
+            raise ProduceError('illegal section name %GLOBALS')
+        else:
+            yield line
+
+### PATTERN MATCHING AND INTERPOLATION
+
+def interpolate(string, variables, ignore_undefined=False,
+        keep_escaped=False):
+    original_string = string
+    result = ''
+    while string:
+        if string.startswith('%%'):
+            if keep_escaped:
+                result += '%%'
+            else:
+                result += '%'
+            string = string[2:]
+        elif string.startswith('%{') and '}' in string:
+            # TODO check that the part between curly braces is a valid
+            # Python identifier (or, eventually, expression)
+            index = string.index('}')
+            variable = string[2:index]
+            if variable in variables:
+                result += variables[variable]
+                string = string[index + 1:]
+            else:
+                if ignore_undefined:
+                    result += string[:index + 1]
+                    string = string[index + 1:]
+                else:
+                    raise ProduceError(
+                            'undefined variable "{}" in pattern "{}"'.format(
+                            variable, original_string))
+        elif string.startswith('%'):
+            raise ProduceError('% must be followed by % or variable name in ' +
+                    'curly braces in pattern {}'.format(original_string))
+        else:
+            result += string[:1]
+            string = string[1:]
+    return result
+
+def section_name_to_regex(name, variables={}):
+    # TODO support regex section names
+    return produce_pattern_to_regex(name)
+
+def produce_pattern_to_regex(pattern, variables={}):
+    # TODO distinguish syntactically between matchers and variable references?
+    # Would allow to override global variables by matching.
+    ip = interpolate(pattern, variables, ignore_undefined=True,
+            keep_escaped=True)
+    regex = ''
+    while ip:
+        if ip.startswith('%%'):
+            regex += '%'
+            ip = ip[:2]
+        elif ip.startswith('%{') and '}' in ip:
+            # TODO check that the part between curly braces is a valid
+            # Python identifier (or, eventually, expression)
+            index = ip.index('}')
+            variable = ip[2:index]
+            regex += '(?P<' + variable + '>.*)'
+            ip = ip[index + 1:]
+        else:
+            regex += re.escape(ip[:1])
+            ip = ip[1:]
+    logging.debug('generated regex: %s', regex)
+    return re.compile(regex)
+
+### INSTANTIATED RULES
+
+class NormalIRule:
+
+    def __init__(self, target, match, avpairs, globes):
+        self.vars = {}
+        self.vars.update(globes)
+        self.vars['target'] = target
+        # TODO is the empty string a good choice?
+        self.vars.update(match.groupdict(default=''))
+        self.dependencies = []
+        for attribute, value in avpairs.items():
+            iv = interpolate(value, self.vars)
+            if attribute.startswith('dep.'):
+                self.dependencies.append(iv)
+            attribute = attribute.split('.')[-1]
+            self.vars[attribute] = iv
+        if self.get_type() not in ('file', 'task'):
+            raise ProduceError('unknown rule type: {}'.format(self.get_type()))
+
+    def get_type(self):
+        return self.vars.get('type', 'file')
+
+    def run(self):
+        if not 'recipe' in self.vars:
+            return
+        target = self.vars['target']
+        if self.get_type() == 'task':
+            logging.info('running task %s', target)
+        else:
+            if os.path.exists(target):
+                logging.info('reproducing file %s', target)
+            else:
+                logging.info('producing file %s', target)
+        recipe = self.vars['recipe']
+        executable = 'bash' # TODO make this configurable
+        exit = subprocess.call(recipe, shell=True, executable=executable)
+        if exit != 0:
+            # TODO delete target? Good for up-to-dateness, bad for debugging.
+            raise ProduceError('recipe failed: {}'.format(recipe))
+        # TODO check here if file was created for file rules, raise exception if not?
+
+    def get_dependencies(self):
+        return dedup(self.dependencies)
+
+    def compute_uptodateness(self, target, lst, irule_by_target,
+            existence_required=False):
+        """
+        Precondition: self matches target.
+        Returns a tuple (needs_updating, time) where needs_updating is a
+        boolean indicating whether target needs reproducing and time is the
+        minimum age that any target depending on target should have in order
+        not to need reproducing, assuming that needs_updating is False.
+        As a side effect, adds all (transitive) dependencies, including this
+        target itself, to lst, avoiding duplicates.
+        """
+        any_dep_need_updating = False
+        newest_dep_time = 0
+        need_producing = existence_required and not os.path.exists(target)
+        for dependency in self.get_dependencies():
+            irule = irule_by_target[dependency]
+            dep_need_updating, dep_time = irule.compute_uptodateness(
+                    dependency, lst, irule_by_target,
+                    existence_required=need_producing)
+            any_dep_need_updating = any_dep_need_updating or dep_need_updating
+            newest_dep_time = max(newest_dep_time, dep_time)
+        if self.get_type() == 'file':
+            own_time = mtime(target, default=newest_dep_time)
+        else:
+            own_time = now()
+        logging.debug('target %s time: %s', target, own_time)
+        logging.debug('newest dep time: %s', newest_dep_time)
+        needs_updating = \
+                any_dep_need_updating or \
+                self.get_type() == 'task' or \
+                own_time < newest_dep_time or \
+                need_producing
+        time = max(own_time, newest_dep_time)
+        if needs_updating:
+            if not target in lst:
+                lst.append(target)
+        return needs_updating, time
+
+class IngredientIRule:
+
+    """
+    Dummy rule for files that don't match any rule but exist, so all is assumed
+    to be well here. These files are considered 'ingredients' to the production
+    process, they are just assumed to be there.
+    """
+
+    def get_dependencies(self):
+        return []
+
+    def compute_uptodateness(self, target, lst, irule_by_target,
+            existence_required=False):
+        time = mtime(target)
+        return (False, time)
+
+    # no run method needed because it's never called
+
+def make_irule(target, rules, globes):
+    for pattern, avpairs in rules.items():
+        match = pattern.match(target)
+        if match:
+            return NormalIRule(target, match, avpairs, globes)
+    if os.path.exists(target):
+        return IngredientIRule()
+    raise ProduceError('no rule to produce {}'.format(target))
+
+### PRODUCE
+
+class DependencyGraph:
 
     def __init__(self):
-        self.attributes = {}
+        self.dependencies_by_depender = {}
+        self.dependers_by_dependency = {}
 
-    def add_attribute_value(self, att, value):
-        if not att in self.attributes:
-            self.attributes[att] = []
-        self.attributes[att].append(value)
+    def add_dependency(self, depender, dependency):
+        if not depender in self.dependencies_by_depender:
+            self.dependencies_by_depender[depender] = []
+        dependencies = self.dependencies_by_depender[depender]
+        if not dependency in dependencies:
+            dependencies.append(dependency)
+        if not dependency in self.dependers_by_dependency:
+            self.dependers_by_dependency[dependency] = []
+        dependers = self.dependers_by_dependency[dependency]
+        if not depender in dependers:
+            dependers.append(depender)
 
-    def __nonzero__(self):
-        return self.attributes
+    def get_dependencies_of(self, depender):
+        return self.dependencies_by_depender.get(depender, [])
 
-class AttributeValue:
+    def get_dependers_of(self, dependency):
+        return self.dependers_by_dependency.get(dependency, [])
 
-    def __init__(self, line, value):
-        self.line = line
-        self.value = value
-
-def read_rule_specifications():
-    line = 0
-    spec = RuleSpecification()
-    with open('produce.cfg') as f:
-        for line in chain(f, ['']):
-            line += 1
-            line = line.rstrip()
-            if not line:
-                if spec:
-                    yield spec
-                    spec = RuleSpecification()
+    def topological_order(self, vertices):
+        """
+        Precondition: vertices are all vertices in this graph and the graph
+        has no cycles.
+        Returns the vertices in a topological order, i.e. for each pair of
+        given vertices (x, y) such that x directly depends on y, y appears in
+        the order before x.
+        Algorithm of Tarjan (1976) as given at
+        https://en.wikipedia.org/w/index.php?title=Topological_sorting&oldid=573941575#Algorithms
+        """
+        result = []
+        def visit(n, beam):
+            if n in beam:
+                raise ProduceError('unexpected error: cyclic graph')
+            if n in result:
+                return
+            for dependency in self.get_dependencies_of(n):
+                if dependency in vertices:
+                    visit(dependency, beam + [n])
+            result.append(n)
+        for vertex in vertices:
+            if vertex in result:
                 continue
-            match = avpattern.match(line)
-            if not match:
-                raise ProduceFileException(line, 'cannot parse line')
-            value = AttributeValue(line, match.group(2)) # TODO types
-            spec.add_attribute_value(match.group(1), value)
+            visit(vertex, [])
+        return result
+
+def produce(targets, rules, globes):
+    """Use the rules to produce the targets."""
+    irule_by_target = {}
+    # Build dependency graph:
+    graph = DependencyGraph()
+    def visit(target, beam):
+        if target in beam:
+            raise ProduceError('cyclic dependency: {}'.format(' -> '.join(
+                beam + [target])))
+        if not target in irule_by_target:
+            # This throws an exception if target does not exist and no rule
+            # matches:
+            irule_by_target[target] = make_irule(target, rules, globes)        
+        irule = irule_by_target[target]
+        for dependency in irule.get_dependencies():
+            graph.add_dependency(target, dependency)
+            visit(dependency, beam + [target])
+    for target in targets:
+        visit(target, [])
+    # Collect dependencies that need updating:
+    need_updating = []
+    for target in targets:
+        irule = irule_by_target[target]
+        irule.compute_uptodateness(target, need_updating, irule_by_target,
+                existence_required=True)
+    logging.debug('targets that need updating: %s', need_updating)
+    if not need_updating:
+        logging.info('all targets are up to date')
+    # Run their recipes in a topological order:
+    order = graph.topological_order(need_updating)
+    logging.debug('in order: %s', order)
+    for target in order:
+        irule = irule_by_target[target]
+        logging.debug('running recipe for target %s', target)
+        irule.run()
+
+### MAIN
+
+if __name__ == '__main__':
+    logging.basicConfig(format='%(levelname)s: %(message)s',
+            level=logging.INFO)
+    try:
+        try:
+            with open('produce.ini') as f:
+               contents = ''.join(preprocess_producefile(f))
+        except IOError as e:
+            raise ProduceError('cannot read file produce.ini', e)
+        # produce has its own mechanism for interpolation, switch ConfigParser's
+        # off.
+        # ConfigParser does not support having no default section. >:-(
+        # Set default section name to something non-conflicting.
+        parser = ConfigParser(default_section='%DEFAULT', interpolation=None)
+        # Disable normalization, we want case-sensitive options:
+        parser.optionxform = lambda x: x
+        # Process config file:
+        parser.read_string(contents)
+        globes = OrderedDict() # "globals" is built-in
+        if '%GLOBALS' in parser:
+            for att, val in parser['%GLOBALS'].items():
+                globes[att] = interpolate(val, globes)
+        rules = OrderedDict()
+        for section in parser:
+            if section in ('%GLOBALS', '%DEFAULT'):
+                continue
+            # TODO in patterns, should we also expand locally defined
+            # variables?
+            rules[section_name_to_regex(section, variables=globes)] = \
+                    OrderedDict(parser[section])
+        # Produce:
+        targets = sys.argv[1:] # TODO more sophisticated cmdln processing
+        if not targets:
+            if 'default' in globes:
+                targets = [globes['default']]
+            else:
+                raise ProduceError('Don\'t know what to produce. Specify a ' +
+                        'target on the command line or a default target in ' +
+                        'produce.ini.')
+        produce(targets, rules, globes)
+    except ProduceError as e:
+        logging.error(e) # TODO better formatting
+        sys.exit(1)
+

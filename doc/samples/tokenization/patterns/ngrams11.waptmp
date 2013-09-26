@@ -1,0 +1,10 @@
+feature 0 = code
+feature 1 = cat
+
+B
+
+code unigrams in width-7 window
+code bigrams in width-7 window
+code trigrams in width-9 window
+code 4-grams in width-9 window
+code 5-grams in width-11 window

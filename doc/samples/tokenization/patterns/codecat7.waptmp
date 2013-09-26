@@ -1,0 +1,7 @@
+feature 0 = code
+feature 1 = cat
+
+B
+
+code unigrams in width-7 window
+cat unigrams in width-7 window
