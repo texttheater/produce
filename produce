@@ -102,8 +102,13 @@ def interpolate(string, variables, ignore_undefined=False,
     return result
 
 def section_name_to_regex(name, variables={}):
-    # TODO support regex section names
-    return produce_pattern_to_regex(name)
+    if len(name) > 1 and name.startswith('/') and name.endswith('/'):
+        try:
+            return re.compile(name[1:-1])
+        except Exception as e:
+            raise ProduceError('{} in regex {}'.format(e, name))
+    else:
+        return produce_pattern_to_regex(name)
 
 def produce_pattern_to_regex(pattern, variables={}):
     # TODO distinguish syntactically between matchers and variable references?

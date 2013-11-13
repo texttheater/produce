@@ -1,0 +1,17 @@
+Very minimal example to test targets that are specified. Try
+
+$ produce out/test.dev.out
+
+As you can see in produce.ini, if a section name starts and ends with a slash,
+the string in-between is interpreted as a Python regular expression, rather
+than a Produce pattern. This affords more control over the form of the targets
+a rule matches. For example, this one checks for the occurrence of the string
+dev or test.
+
+Produce variable references %{...} cannot be used in regular expressions.
+Instead, use named groups. For example, what the subexpression (?<corpus>.*)
+matches will be assigned to the Produce variable corpus. It can then be
+referred to in the body of the rule.
+
+Note that although slashes delimit the regular expression, it is not necessary
+to escape slashes occurring within it.
