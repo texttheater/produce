@@ -172,6 +172,7 @@ class NormalIRule:
                 logging.info('producing file %s', target)
         recipe = self.vars['recipe']
         executable = 'bash' # TODO make this configurable
+        print(recipe) # TODO add --s --silent --quiet option
         exit = subprocess.call(recipe, shell=True, executable=executable)
         if exit != 0:
             # TODO delete target? Good for up-to-dateness, bad for debugging.
