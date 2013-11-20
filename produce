@@ -59,6 +59,8 @@ class ProduceError(Exception):
 
 def process_commandline():
     parser = argparse.ArgumentParser()
+    parser.add_argument('-n', '--dry-run', action='store_true', help="""Print
+            the commands that would be executed, but do not execute them.""")
     parser.add_argument('targets', nargs='*', help="""The targets to produce.
             If omitted, default target from Producefile is used.""")
     return parser.parse_args()
@@ -168,7 +170,7 @@ class NormalIRule:
     def get_type(self):
         return self.vars.get('type', 'file')
 
-    def run(self):
+    def run(self, dry_run=False):
         if not 'recipe' in self.vars:
             return
         target = self.vars['target']
@@ -182,11 +184,12 @@ class NormalIRule:
         recipe = self.vars['recipe']
         executable = 'bash' # TODO make this configurable
         print(recipe) # TODO add --s --silent --quiet option
-        exit = subprocess.call(recipe, shell=True, executable=executable)
-        if exit != 0:
-            # TODO delete target? Good for up-to-dateness, bad for debugging.
-            raise ProduceError('recipe failed: {}'.format(recipe))
-        # TODO check here if file was created for file rules, raise exception if not?
+        if not dry_run:
+            exit = subprocess.call(recipe, shell=True, executable=executable)
+            if exit != 0:
+                # TODO delete target? Good for up-to-dateness, bad for debugging.
+                raise ProduceError('recipe failed: {}'.format(recipe))
+            # TODO check here if file was created for file rules, raise exception if not?
 
     def get_dependencies(self):
         return dedup(self.dependencies)
@@ -308,7 +311,7 @@ class DependencyGraph:
             visit(vertex, [])
         return result
 
-def produce(targets, rules, globes):
+def produce(targets, rules, globes, dry_run=False):
     """Use the rules to produce the targets."""
     irule_by_target = {}
     # Build dependency graph:
@@ -342,7 +345,7 @@ def produce(targets, rules, globes):
     for target in order:
         irule = irule_by_target[target]
         logging.debug('running recipe for target %s', target)
-        irule.run()
+        irule.run(dry_run=dry_run)
 
 ### MAIN
 
@@ -385,7 +388,7 @@ if __name__ == '__main__':
                 raise ProduceError('Don\'t know what to produce. Specify a ' +
                         'target on the command line or a default target in ' +
                         'produce.ini.')
-        produce(args.targets, rules, globes)
+        produce(args.targets, rules, globes, dry_run=args.dry_run)
     except ProduceError as e:
         logging.error(e) # TODO better formatting
         sys.exit(1)
