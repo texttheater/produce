@@ -211,8 +211,7 @@ class NormalIRule:
         for dependency in self.get_dependencies():
             irule = irule_by_target[dependency]
             dep_need_updating, dep_time = irule.compute_uptodateness(
-                    dependency, lst, irule_by_target,
-                    existence_required=need_producing)
+                    dependency, lst, irule_by_target)
             any_dep_need_updating = any_dep_need_updating or dep_need_updating
             newest_dep_time = max(newest_dep_time, dep_time)
         if self.get_type() == 'file':
@@ -232,6 +231,13 @@ class NormalIRule:
                 lst.append(target)
         return needs_updating, time
 
+    def add_dependencies(self, target, need_updating, irule_by_target):
+        if not target in need_updating:
+            need_updating.append(target)
+        for dependency in self.get_dependencies():
+            irule = irule_by_target[dependency]
+            irule.add_dependencies(dependency, need_updating, irule_by_target)
+
 class IngredientIRule:
 
     """
@@ -247,6 +253,9 @@ class IngredientIRule:
             existence_required=False):
         time = mtime(target)
         return (False, time)
+
+    def add_dependencies(self, target, need_updating, irule_by_target):
+        return
 
     # no run method needed because it's never called
 
@@ -330,21 +339,28 @@ def produce(targets, rules, globes, dry_run=False):
             visit(dependency, beam + [target])
     for target in targets:
         visit(target, [])
-    # Collect dependencies that need updating:
+    # Collect dependencies that need updating.
+    # First pass: go from dependencies to dependents and find targets that are
+    # out of date, required but nonexistant, tasks or otherwise have to be run:
     need_updating = []
     for target in targets:
         irule = irule_by_target[target]
         irule.compute_uptodateness(target, need_updating, irule_by_target,
                 existence_required=True)
-    logging.debug('targets that need updating: %s', need_updating)
+    # Second pass: go from dependents to dependencies and add those
+    # dependencies that we haven't collected yet:
+    for subtarget in list(need_updating):
+        irule = irule_by_target[subtarget]
+        irule.add_dependencies(target, need_updating, irule_by_target)
+    logging.debug('subtargets that need updating: %s', need_updating)
     if not need_updating:
         logging.info('all targets are up to date')
     # Run their recipes in a topological order:
     order = graph.topological_order(need_updating)
     logging.debug('in order: %s', order)
-    for target in order:
-        irule = irule_by_target[target]
-        logging.debug('running recipe for target %s', target)
+    for subtarget in order:
+        irule = irule_by_target[subtarget]
+        logging.debug('running recipe for target %s', subtarget)
         irule.run(dry_run=dry_run)
 
 ### MAIN
