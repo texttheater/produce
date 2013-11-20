@@ -4,6 +4,7 @@ import errno
 import logging
 import os
 import re
+import shlex
 import subprocess
 import sys
 import time
@@ -149,6 +150,8 @@ class NormalIRule:
             if attribute.startswith('dep.'):
                 self.dependencies.append(iv)
             attribute = attribute.split('.')[-1]
+            if attribute == 'deps':
+                self.dependencies.extend(shlex.split(iv))
             self.vars[attribute] = iv
         if self.get_type() not in ('file', 'task'):
             raise ProduceError('unknown rule type: {}'.format(self.get_type()))
