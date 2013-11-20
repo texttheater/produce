@@ -59,10 +59,10 @@ class ProduceError(Exception):
 
 def process_commandline():
     parser = argparse.ArgumentParser()
-    parser.add_argument('-n', '--dry-run', action='store_true', help="""Print
-            the commands that would be executed, but do not execute them.""")
-    parser.add_argument('targets', nargs='*', help="""The targets to produce.
-            If omitted, default target from Producefile is used.""")
+    parser.add_argument('-n', '--dry-run', action='store_true', help="""print
+            the commands that would be executed, but do not execute them""")
+    parser.add_argument('target', nargs='*', help="""the target(s) to produce
+            - if omitted, default target from Producefile is used""")
     return parser.parse_args()
 
 ### PRODUCEFILE PARSING
@@ -381,14 +381,15 @@ if __name__ == '__main__':
             rules[section_name_to_regex(section, variables=globes)] = \
                     OrderedDict(parser[section])
         # Produce:
-        if not args.targets:
+        targets = args.target
+        if not targets:
             if 'default' in globes:
-                args.targets = [globes['default']]
+                targets = [globes['default']]
             else:
                 raise ProduceError('Don\'t know what to produce. Specify a ' +
                         'target on the command line or a default target in ' +
                         'produce.ini.')
-        produce(args.targets, rules, globes, dry_run=args.dry_run)
+        produce(targets, rules, globes, dry_run=args.dry_run)
     except ProduceError as e:
         logging.error(e) # TODO better formatting
         sys.exit(1)
