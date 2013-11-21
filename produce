@@ -185,7 +185,8 @@ class NormalIRule:
         executable = 'bash' # TODO make this configurable
         print(recipe) # TODO add --s --silent --quiet option
         if not dry_run:
-            exit = subprocess.call(recipe, shell=True, executable=executable)
+            exit = subprocess.call(recipe, shell=True, executable=executable,
+                    stdin=sys.stdin)
             if exit != 0:
                 # TODO delete target? Good for up-to-dateness, bad for debugging.
                 raise ProduceError('recipe failed: {}'.format(recipe))
@@ -231,12 +232,16 @@ class NormalIRule:
                 lst.append(target)
         return needs_updating, time
 
-    def add_dependencies(self, target, need_updating, irule_by_target):
+    def add_missing_dependencies(self, target, need_updating, irule_by_target):
         if not target in need_updating:
-            need_updating.append(target)
+            if self.get_type() == 'file' and os.path.exists(target):
+                pass
+            else:
+                need_updating.append(target)
         for dependency in self.get_dependencies():
             irule = irule_by_target[dependency]
-            irule.add_dependencies(dependency, need_updating, irule_by_target)
+            irule.add_missing_dependencies(dependency, need_updating,
+                    irule_by_target)
 
 class IngredientIRule:
 
@@ -254,7 +259,7 @@ class IngredientIRule:
         time = mtime(target)
         return (False, time)
 
-    def add_dependencies(self, target, need_updating, irule_by_target):
+    def add_missing_dependencies(self, target, need_updating, irule_by_target):
         return
 
     # no run method needed because it's never called
@@ -347,11 +352,11 @@ def produce(targets, rules, globes, dry_run=False):
         irule = irule_by_target[target]
         irule.compute_uptodateness(target, need_updating, irule_by_target,
                 existence_required=True)
-    # Second pass: go from dependents to dependencies and add those
-    # dependencies that we haven't collected yet:
+    # Second pass: go from dependents to dependencies and add file dependencies
+    # that we need for updating but that don't currently exist:
     for subtarget in list(need_updating):
         irule = irule_by_target[subtarget]
-        irule.add_dependencies(target, need_updating, irule_by_target)
+        irule.add_missing_dependencies(target, need_updating, irule_by_target)
     logging.debug('subtargets that need updating: %s', need_updating)
     if not need_updating:
         logging.info('all targets are up to date')
