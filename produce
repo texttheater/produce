@@ -238,10 +238,11 @@ class NormalIRule:
                 pass
             else:
                 need_updating.append(target)
-        for dependency in self.get_dependencies():
-            irule = irule_by_target[dependency]
-            irule.add_missing_dependencies(dependency, need_updating,
-                    irule_by_target)
+        if target in need_updating:
+            for dependency in self.get_dependencies():
+                irule = irule_by_target[dependency]
+                irule.add_missing_dependencies(dependency, need_updating,
+                        irule_by_target)
 
 class IngredientIRule:
 
@@ -348,16 +349,18 @@ def produce(targets, rules, globes, dry_run=False):
     # First pass: go from dependencies to dependents and find targets that are
     # out of date, required but nonexistant, tasks or otherwise have to be run:
     need_updating = []
+    logging.debug('targets: %s', targets)
     for target in targets:
         irule = irule_by_target[target]
         irule.compute_uptodateness(target, need_updating, irule_by_target,
                 existence_required=True)
+    logging.debug('need updating after first pass: %s', need_updating)
     # Second pass: go from dependents to dependencies and add file dependencies
     # that we need for updating but that don't currently exist:
     for subtarget in list(need_updating):
         irule = irule_by_target[subtarget]
         irule.add_missing_dependencies(target, need_updating, irule_by_target)
-    logging.debug('subtargets that need updating: %s', need_updating)
+    logging.debug('need updating after second pass: %s', need_updating)
     if not need_updating:
         logging.info('all targets are up to date')
     # Run their recipes in a topological order:
@@ -365,7 +368,6 @@ def produce(targets, rules, globes, dry_run=False):
     logging.debug('in order: %s', order)
     for subtarget in order:
         irule = irule_by_target[subtarget]
-        logging.debug('running recipe for target %s', subtarget)
         irule.run(dry_run=dry_run)
 
 ### MAIN
