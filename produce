@@ -24,6 +24,8 @@ from configparser import ConfigParser
 # TODO flat producing: run the recipe of the target, touch all existing
 # dependencies
 # TODO optionally delete intermediate files
+# TODO attribute that automatically tees STDERR (possibly also STDOUT) of a
+# recipe into a logfile corresponding to the target, e.g. %{target}.log
 
 ### UTILITIES
 
@@ -132,6 +134,8 @@ def produce_pattern_to_regex(pattern, variables={}):
         if ip.startswith('%%'):
             regex += '%'
             ip = ip[:2]
+        # FIXME using the same variable twice in the pattern can be useful but
+        # the re library will raise an exception
         elif ip.startswith('%{') and '}' in ip:
             # TODO check that the part between curly braces is a valid
             # Python identifier (or, eventually, expression)
