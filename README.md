@@ -5,8 +5,8 @@ Replacement for Make geared towards processing data rather than compiling
 code. Strives to be simple and user-friendly. Key feature: supports multiple
 expansions in pattern rules.
 
-produce is in an early stage of development. Current status: first working
-prototype.
+Produce recently graduated from first working prototype to "dogfood": the
+developer is using it daily in his main project.
 
 Dependencies
 ------------
