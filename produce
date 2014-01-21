@@ -15,7 +15,7 @@ from configparser import ConfigParser
 
 ### PLANNED FEATURES
 
-# TODO variation on the file rule type that unconditionally runs the recipe
+# TODO variation on the file rule type that always_buildly runs the recipe
 # but with a temp file with target, then percolates dirtiness only if the new
 # file differs from the existing version
 # TODO full Python expressions with access to all vars for interpolations
@@ -61,6 +61,8 @@ class ProduceError(Exception):
 
 def process_commandline():
     parser = argparse.ArgumentParser()
+    parser.add_argument('-B', '--always-build', action='store_true',
+            help="""unconditionally build all targets""")
     parser.add_argument('-n', '--dry-run', action='store_true', help="""print
             the commands that would be executed, but do not execute them""")
     parser.add_argument('target', nargs='*', help="""the target(s) to produce
@@ -200,7 +202,7 @@ class NormalIRule:
         return dedup(self.dependencies)
 
     def compute_uptodateness(self, target, lst, irule_by_target,
-            existence_required=False):
+            existence_required=False, always_build=False):
         """
         Precondition: self matches target.
         Returns a tuple (needs_updating, time) where needs_updating is a
@@ -216,7 +218,8 @@ class NormalIRule:
         for dependency in self.get_dependencies():
             irule = irule_by_target[dependency]
             dep_need_updating, dep_time = irule.compute_uptodateness(
-                    dependency, lst, irule_by_target)
+                    dependency, lst, irule_by_target,
+                    always_build=always_build)
             any_dep_need_updating = any_dep_need_updating or dep_need_updating
             newest_dep_time = max(newest_dep_time, dep_time)
         if self.get_type() == 'file':
@@ -229,7 +232,8 @@ class NormalIRule:
                 any_dep_need_updating or \
                 self.get_type() == 'task' or \
                 own_time < newest_dep_time or \
-                need_producing
+                need_producing or \
+                always_build
         time = max(own_time, newest_dep_time)
         if needs_updating:
             if not target in lst:
@@ -260,7 +264,7 @@ class IngredientIRule:
         return []
 
     def compute_uptodateness(self, target, lst, irule_by_target,
-            existence_required=False):
+            existence_required=False, always_build=False):
         time = mtime(target)
         return (False, time)
 
@@ -330,7 +334,7 @@ class DependencyGraph:
             visit(vertex, [])
         return result
 
-def produce(targets, rules, globes, dry_run=False):
+def produce(targets, rules, globes, dry_run=False, always_build=False):
     """Use the rules to produce the targets."""
     irule_by_target = {}
     # Build dependency graph:
@@ -357,7 +361,7 @@ def produce(targets, rules, globes, dry_run=False):
     for target in targets:
         irule = irule_by_target[target]
         irule.compute_uptodateness(target, need_updating, irule_by_target,
-                existence_required=True)
+                existence_required=True, always_build=always_build)
     logging.debug('need updating after first pass: %s', need_updating)
     # Second pass: go from dependents to dependencies and add file dependencies
     # that we need for updating but that don't currently exist:
@@ -416,7 +420,8 @@ if __name__ == '__main__':
                 raise ProduceError('Don\'t know what to produce. Specify a ' +
                         'target on the command line or a default target in ' +
                         'produce.ini.')
-        produce(targets, rules, globes, dry_run=args.dry_run)
+        produce(targets, rules, globes, dry_run=args.dry_run,
+                always_build=args.always_build)
     except ProduceError as e:
         logging.error(e) # TODO better formatting
         sys.exit(1)
