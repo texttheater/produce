@@ -15,7 +15,7 @@ from configparser import ConfigParser
 
 ### PLANNED FEATURES
 
-# TODO variation on the file rule type that always_buildly runs the recipe
+# TODO variation on the file rule type that unconditionally runs the recipe
 # but with a temp file with target, then percolates dirtiness only if the new
 # file differs from the existing version
 # TODO full Python expressions with access to all vars for interpolations
