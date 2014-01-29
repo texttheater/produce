@@ -1,9 +1,11 @@
 produce
 =======
 
-Replacement for Make geared towards processing data rather than compiling
-code. Strives to be simple and user-friendly. Key feature: supports multiple
-expansions in pattern rules.
+Produce is an incremental build system for the command line, like make or redo.
+It strives to be simple and user-friendly. It is less geared towards compiling
+code, and more towards processing data and running sets of machine learning
+experiments. Specifically, it works well with filenames that have not just one
+but many variable parts, e.g. to indicate experimental parameters.
 
 Produce recently graduated from first working prototype to "dogfood": the
 developer is using it daily in his main project.
@@ -13,7 +15,7 @@ Dependencies
 
 * A Unix-like operating system such as Linux or Mac OS X. Cygwin under Windows
   may also work.
-* Python 3 (!)
+* Python 3
 
 Installation
 ------------
