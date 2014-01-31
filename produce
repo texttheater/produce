@@ -99,6 +99,7 @@ def interpolate(string, variables, ignore_undefined=False,
             index = string.index('}')
             variable = string[2:index]
             if variable in variables:
+                logging.debug('interpolating %s into %s', variable, variables[variable])
                 result += variables[variable]
                 string = string[index + 1:]
             else:
