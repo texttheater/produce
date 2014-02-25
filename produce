@@ -84,10 +84,7 @@ def preprocess_producefile(f):
 
 def interpolate(string, globes, lokes, ignore_undefined=False,
         keep_escaped=False):
-    # TODO use eval instead of dictionary for expanding variables
-    variables = {}
-    variables.update(globes)
-    variables.update(lokes)
+    logging.debug('interpolate called with lokes: %s', lokes)
     original_string = string
     result = ''
     while string:
@@ -99,14 +96,16 @@ def interpolate(string, globes, lokes, ignore_undefined=False,
             string = string[2:]
         elif string.startswith('%{') and '}' in string:
             # TODO check that the part between curly braces is a valid
-            # Python identifier (or, eventually, expression)
+            # Python expression
+            # TODO Make it possible for the Python expression to contain }.
             index = string.index('}')
-            variable = string[2:index]
-            if variable in variables:
-                logging.debug('interpolating %s into %s', variable, variables[variable])
-                result += variables[variable]
+            expression = string[2:index]
+            try:
+                value = eval(expression, globes, lokes)
+                logging.debug('interpolating %s into %s', expression, value)
+                result += str(value)
                 string = string[index + 1:]
-            else:
+            except NameError:
                 if ignore_undefined:
                     result += string[:index + 1]
                     string = string[index + 1:]
@@ -164,6 +163,7 @@ class NormalIRule:
         # TODO is the empty string a good choice?
         self.lokes = match.groupdict(default = '')
         self.lokes['target'] = target
+        logging.debug('IRule for target %s has lokes: %s', target, self.lokes)
         self.dependencies = []
         for attribute, value in avpairs.items():
             iv = interpolate(value, globes, self.lokes)
@@ -386,7 +386,7 @@ def produce(targets, rules, globes, dry_run=False, always_build=False):
 if __name__ == '__main__':
     args = process_commandline()
     logging.basicConfig(format='%(levelname)s: %(message)s',
-            level=logging.INFO)
+            level=logging.DEBUG)
     try:
         try:
             with open('produce.ini') as f:
