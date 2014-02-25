@@ -426,4 +426,7 @@ if __name__ == '__main__':
     except ProduceError as e:
         logging.error(e) # TODO better formatting
         sys.exit(1)
+    except KeyboardInterrupt as e:
+        logging.error('Interrupted by user. Exiting.') # TODO cleanup?
+        sys.exit(2)
 
