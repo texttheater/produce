@@ -101,7 +101,14 @@ def interpolate(string, globes, lokes, ignore_undefined=False,
             index = string.index('}')
             expression = string[2:index]
             try:
-                value = eval(expression, globes, lokes)
+                try:
+                    value = eval(expression, globes, lokes)
+                except NameError as e:
+                    raise e
+                except Exception as e:
+                    raise ProduceError(('{} evaluating expression {} in ' +
+                            'pattern {}: {}').format(e.__class__.__name__,
+                            expression, original_string, e))
                 logging.debug('interpolating %s into %s', expression, value)
                 result += str(value)
                 string = string[index + 1:]
@@ -386,7 +393,7 @@ def produce(targets, rules, globes, dry_run=False, always_build=False):
 if __name__ == '__main__':
     args = process_commandline()
     logging.basicConfig(format='%(levelname)s: %(message)s',
-            level=logging.DEBUG)
+            level=logging.INFO)
     try:
         try:
             with open('produce.ini') as f:
