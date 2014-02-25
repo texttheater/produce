@@ -125,7 +125,7 @@ def section_name_to_regex(name, variables={}):
         except Exception as e:
             raise ProduceError('{} in regex {}'.format(e, name))
     else:
-        return produce_pattern_to_regex(name)
+        return produce_pattern_to_regex(name, variables)
 
 def produce_pattern_to_regex(pattern, variables={}):
     # TODO distinguish syntactically between matchers and variable references?
