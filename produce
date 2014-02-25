@@ -112,7 +112,7 @@ def interpolate(string, globes, lokes, ignore_undefined=False,
                 else:
                     raise ProduceError(
                             'undefined variable "{}" in pattern "{}"'.format(
-                            variable, original_string))
+                            expression, original_string))
         elif string.startswith('%'):
             raise ProduceError('% must be followed by % or variable name in ' +
                     'curly braces in pattern {}'.format(original_string))
