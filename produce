@@ -82,8 +82,12 @@ def preprocess_producefile(f):
 
 ### PATTERN MATCHING AND INTERPOLATION
 
-def interpolate(string, variables, ignore_undefined=False,
+def interpolate(string, globes, lokes, ignore_undefined=False,
         keep_escaped=False):
+    # TODO use eval instead of dictionary for expanding variables
+    variables = {}
+    variables.update(globes)
+    variables.update(lokes)
     original_string = string
     result = ''
     while string:
@@ -118,19 +122,19 @@ def interpolate(string, variables, ignore_undefined=False,
             string = string[1:]
     return result
 
-def section_name_to_regex(name, variables={}):
+def section_name_to_regex(name, globes={}):
     if len(name) > 1 and name.startswith('/') and name.endswith('/'):
         try:
             return re.compile(name[1:-1])
         except Exception as e:
             raise ProduceError('{} in regex {}'.format(e, name))
     else:
-        return produce_pattern_to_regex(name, variables)
+        return produce_pattern_to_regex(name, globes)
 
-def produce_pattern_to_regex(pattern, variables={}):
+def produce_pattern_to_regex(pattern, globes={}):
     # TODO distinguish syntactically between matchers and variable references?
     # Would allow to override global variables by matching.
-    ip = interpolate(pattern, variables, ignore_undefined=True,
+    ip = interpolate(pattern, globes, {}, ignore_undefined=True,
             keep_escaped=True)
     regex = ''
     while ip:
@@ -157,30 +161,28 @@ def produce_pattern_to_regex(pattern, variables={}):
 class NormalIRule:
 
     def __init__(self, target, match, avpairs, globes):
-        self.vars = {}
-        self.vars.update(globes)
-        self.vars['target'] = target
         # TODO is the empty string a good choice?
-        self.vars.update(match.groupdict(default=''))
+        self.lokes = match.groupdict(default = '')
+        self.lokes['target'] = target
         self.dependencies = []
         for attribute, value in avpairs.items():
-            iv = interpolate(value, self.vars)
+            iv = interpolate(value, globes, self.lokes)
             if attribute.startswith('dep.'):
                 self.dependencies.append(iv)
             attribute = attribute.split('.')[-1]
             if attribute == 'deps':
                 self.dependencies.extend(shlex.split(iv))
-            self.vars[attribute] = iv
+            self.lokes[attribute] = iv
         if self.get_type() not in ('file', 'task'):
             raise ProduceError('unknown rule type: {}'.format(self.get_type()))
 
     def get_type(self):
-        return self.vars.get('type', 'file')
+        return self.lokes.get('type', 'file')
 
     def run(self, dry_run=False):
-        if not 'recipe' in self.vars:
+        if not 'recipe' in self.lokes:
             return
-        target = self.vars['target']
+        target = self.lokes['target']
         if self.get_type() == 'task':
             logging.info('running task %s', target)
         else:
@@ -188,7 +190,7 @@ class NormalIRule:
                 logging.info('reproducing file %s', target)
             else:
                 logging.info('producing file %s', target)
-        recipe = self.vars['recipe']
+        recipe = self.lokes['recipe']
         executable = 'bash' # TODO make this configurable
         print(recipe) # TODO add --s --silent --quiet option
         if not dry_run:
@@ -403,14 +405,14 @@ if __name__ == '__main__':
         globes = OrderedDict() # "globals" is built-in
         if '%GLOBALS' in parser:
             for att, val in parser['%GLOBALS'].items():
-                globes[att] = interpolate(val, globes)
+                globes[att] = interpolate(val, globes, {})
         rules = OrderedDict()
         for section in parser:
             if section in ('%GLOBALS', '%DEFAULT'):
                 continue
             # TODO in patterns, should we also expand locally defined
             # variables?
-            rules[section_name_to_regex(section, variables=globes)] = \
+            rules[section_name_to_regex(section, globes=globes)] = \
                     OrderedDict(parser[section])
         # Produce:
         targets = args.target
