@@ -159,6 +159,7 @@ def produce_pattern_to_regex(pattern, globes={}):
         else:
             regex += re.escape(ip[:1])
             ip = ip[1:]
+    regex += '$' # re.match doesn't enforce reaching the end by itself
     logging.debug('generated regex: %s', regex)
     return re.compile(regex)
 
