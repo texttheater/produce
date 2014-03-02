@@ -22,6 +22,12 @@ class ProduceTestCase(unittest.TestCase):
             self.skipTest('setup failed')
         os.chdir(self.workdir)
 
+    def tearDown(self):
+        os.chdir('..')
+
+    def assertDirectoryContents(self, filelist):
+        self.assertEqual(set(filelist), set(os.listdir()))
+
     def produce(self, *args):
         self.runCommand(['produce'] + list(args))
 
