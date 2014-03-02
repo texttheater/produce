@@ -1,4 +1,5 @@
-Very minimal example to test targets that are specified. Try
+Very minimal example to test targets that are specified using regular
+expressions. Try
 
 $ produce out/test.dev.out
 
@@ -13,5 +14,5 @@ Instead, use named groups. For example, what the subexpression (?<corpus>.*)
 matches will be assigned to the Produce variable corpus. It can then be
 referred to in the body of the rule.
 
-Note that although slashes delimit the regular expression, it is not necessary
+Note that although slashes enclose the regular expression, it is not necessary
 to escape slashes occurring within it.

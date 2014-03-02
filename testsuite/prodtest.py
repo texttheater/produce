@@ -25,8 +25,8 @@ class ProduceTestCase(unittest.TestCase):
     def tearDown(self):
         os.chdir('..')
 
-    def assertDirectoryContents(self, filelist):
-        self.assertEqual(set(filelist), set(os.listdir()))
+    def assertDirectoryContents(self, filelist, directory='.'):
+        self.assertEqual(set(filelist), set(os.listdir(directory)))
 
     def produce(self, *args):
         self.runCommand(['produce'] + list(args))
