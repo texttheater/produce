@@ -460,18 +460,18 @@ class Production:
 
     def build(self, target):
         for ddep in self.target_ddeps[target]:
-            self.build_if_out_of_date(ddep)
+            self.build_if_required(ddep)
         run_recipe(self.irules[target]) # raises exception if recipe fails TODO write
         self.out_of_date_targets.remove(target)
 
-    def build_if_out_of_date(self, target):
-        if not self.is_out_of_date(target):
+    def build_if_required(self, target):
+        if not (self.is_out_of_date(target) or self.always_build):
             return False
         self.build(target)
         return True
 
     def produce(self, targets):
-        if all([not build_if_out_of_date(target) for target in targets]):
+        if all([not build_if_required(target) for target in targets]):
             logging.info('all targets are up to date')
 
 ### MAIN
