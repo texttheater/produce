@@ -167,6 +167,28 @@ def produce_pattern_to_regex(pattern, globes={}):
 
 ### INSTANTIATED RULES
 
+def run_recipe(irule, dry_run=False):
+    if not 'recipe' in irule:
+        return
+    target = irule['target']
+    if irule.get('type', 'file') == 'task':
+        logging_info('running task %s', target)
+    else:
+        if os.path.exists(target):
+            logging.info('rebuilding file %s', target)
+        else:
+            logging.info('building file %s', target)
+    recipe = irule['recipe']
+    executable = 'bash' # TODO make configurable
+    print(recipe) # TODO add --s --silent --quiet option
+    if not dry_run:
+        exit = subprocess.call(recipe, shell=True, executable=executable,
+                stdin=sys.stdin)
+        if exit != 0:
+            # TODO delete target? Good for up-to-dateness, bad for debugging.
+            raise ProduceError('recipe failed: {}'.format(recipe))
+        # TODO check here if file was created for file rules, raise exception if not?
+
 class NormalIRule:
 
     def __init__(self, target, match, avpairs, globes):
