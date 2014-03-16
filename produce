@@ -172,7 +172,7 @@ def run_recipe(irule, dry_run=False):
         return
     target = irule['target']
     if irule.get('type', 'file') == 'task':
-        logging_info('running task %s', target)
+        logging.info('running task %s', target)
     else:
         if os.path.exists(target):
             logging.info('rebuilding file %s', target)
@@ -338,6 +338,7 @@ def create_irule(target, rules, globes):
             # TODO is the empty string a good default?
             lokes = match.groupdict(default = '')
             # Special attribute: target
+            result['target'] = target
             lokes['target'] = target
             # Process attributes and their values:
             for attribute, value in avpairs.items():
@@ -353,7 +354,7 @@ def create_irule(target, rules, globes):
                 # Local variable does not retain prefix:
                 lokes[loke] = iv
             logging.debug('instantiated rule for target %s has lokes: %s',
-                    target, self.lokes)
+                    target, lokes)
             result['type'] = result.get('type', 'file')
             if result['type'] not in ('file', 'task'):
                 raise ProduceError('unknown type {} for target {}'.format(
@@ -479,12 +480,13 @@ class Production:
         self.always_build = always_build
         self.irules = {} # maps targets to key-instantiated value maps ("instantiated rules")
         self.out_of_date_targets = set()
+        self.missing_targets = set()
         self.target_ddeps = {} # direct dependencies
         self.target_time = {}
         for target in targets:
             self.add_target(target, [])
 
-    def add_target(target, beam):
+    def add_target(self, target, beam):
         # Catch cyclic dependencies:
         if target in beam:
             raise ProduceError('cyclic dependency: {}'.format(' -> '.join(beam)
@@ -493,52 +495,67 @@ class Production:
         if target in self.targets:
             return
         # Make instantiated rule:
-        irule = self.create_irule(target, self.rules, self.globes) # TODO write
+        irule = create_irule(target, self.rules, self.globes)
         # Determine dependencies:
         ddeps = list_ddeps(irule)
+        logging.debug('direct dependencies of %s: %s', target, ddeps)
         max_ddep_time = 0
         for ddep in ddeps:
-            add_target(ddep, beam + [target])
-        # Determine time of target:
-        target_type = irule.get('type', 'file')
+            self.add_target(ddep, beam + [target])
+        # Determine type, existence and time of target:
+        target_type = irule['type']
         if target_type == 'task':
+            missing = False
             time = 0
         else:
-            time = mtime(target, 0)
+            missing = not os.path.exists(target)
+            if missing:
+                time = 0
+            else:
+                time = mtime(target, 0)
         # Determine whether target is out of date:
         # 1. Tasks are always considered out of date.
         # 2. If any dependency is newer than the target, the target is out of
         #    date.
         # 3. If any dependency is out of date, so is the target.
-        if target_type == 'task' \
-                or max([self.target_time[ddep] for ddep in ddeps]) > time \
-                or any([is_out_of_date(ddep) for ddep in ddeps]):
-            out_of_date = True
+        # 4. Consider it out of date if the always_build option is True.
+        out_of_date = target_type == 'task' \
+                or (ddeps \
+                and max([self.target_time[ddep] for ddep in ddeps]) > time) \
+                or any([self.is_out_of_date(ddep) for ddep in ddeps]) \
+                or self.always_build
+        logging.debug('%s out of date? %s', target, out_of_date)
         # Store information about this target:
         self.targets.append(targets)
         self.irules[target] = irule
-        self.ddeps[target] = ddeps
+        self.target_ddeps[target] = ddeps
         self.target_time[target] = time
         if out_of_date:
             self.out_of_date_targets.add(target)
+        if missing:
+            self.missing_targets.add(target)
 
     def is_out_of_date(self, target):
         return target in self.out_of_date_targets
+
+    def is_missing(self, target):
+        return target in self.missing_targets
 
     def build(self, target):
         for ddep in self.target_ddeps[target]:
             self.build_if_required(ddep)
         run_recipe(self.irules[target]) # raises exception if recipe fails
-        self.out_of_date_targets.remove(target)
+        self.out_of_date_targets.discard(target)
+        self.missing_targets.discard(target)
 
     def build_if_required(self, target):
-        if not (self.is_out_of_date(target) or self.always_build):
+        if not (self.is_out_of_date(target) or self.is_missing(target)):
             return False
         self.build(target)
         return True
 
     def produce(self, targets):
-        if all([not build_if_required(target) for target in targets]):
+        if all([not self.build_if_required(target) for target in targets]):
             logging.info('all targets are up to date')
 
 ### MAIN
@@ -583,12 +600,13 @@ if __name__ == '__main__':
                 raise ProduceError('Don\'t know what to produce. Specify a ' +
                         'target on the command line or a default target in ' +
                         'produce.ini.')
-        produce(targets, rules, globes, dry_run=args.dry_run,
-                always_build=args.always_build)
+        Production(targets, rules, globes, args.dry_run, args.always_build
+                ).produce(targets)
+        #produce(targets, rules, globes, dry_run=args.dry_run,
+        #        always_build=args.always_build)
     except ProduceError as e:
         logging.error(e) # TODO better formatting
         sys.exit(1)
     except KeyboardInterrupt as e:
         logging.error('Interrupted by user. Exiting.') # TODO cleanup?
         sys.exit(2)
-
