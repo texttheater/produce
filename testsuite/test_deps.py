@@ -1,6 +1,11 @@
-import prodtest
+from prodtest import ProduceTestCase
 
-class DepTest(prodtest.ProduceTestCase):
+class DepTest(ProduceTestCase):
+
+    # In this project, we didn't call the producefile produce.ini, but
+    # something custom, so we have to pass that as an option to produce:
+    def produce(self, *targets):
+        ProduceTestCase.produce(self, *targets, **{'-f': 'deps.ini'})
 
     def test_full(self):
         self.assertOriginalState()

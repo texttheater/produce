@@ -3,6 +3,21 @@ import subprocess
 import time
 import unittest
 
+def dict2opts(d):
+   """
+   Turns a dictionary into a list of strings representing command-line
+   options. Keys of the dictionary should already be in option format,
+   i.e. with leading hyphens. Values are arguments of options. None
+   values should be used for options without arguments. Options with
+   multiple arguments are not supported.
+   """
+   result = []
+   for k, v in d.items():
+       result.append(k)
+       if v != None:
+           result.append(v)
+   return result
+
 class ProduceTestCase(unittest.TestCase):
 
     """
@@ -13,7 +28,6 @@ class ProduceTestCase(unittest.TestCase):
     """
 
     def setUp(self):
-        # TODO use absolute paths based on testsuite directory?
         self.workdir = self.__module__ + '.working'
         try:
             self.runCommand(['rm', '-rf', self.workdir])
@@ -28,8 +42,8 @@ class ProduceTestCase(unittest.TestCase):
     def assertDirectoryContents(self, filelist, directory='.'):
         self.assertEqual(set(filelist), set(os.listdir(directory)))
 
-    def produce(self, *args):
-        self.runCommand(['produce'] + list(args))
+    def produce(self, *args, **kwargs):
+        self.runCommand(['produce'] + dict2opts(kwargs) + list(args))
 
     def assertFileExists(self, path):
         self.assertTrue(os.path.exists(path))
