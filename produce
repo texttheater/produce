@@ -238,6 +238,7 @@ class NormalIRule:
         else:
             own_time = now()
         logging.debug('target %s time: %s', target, own_time)
+        logging.debug('dependencies: %s', self.get_dependencies())
         logging.debug('newest dep time: %s', newest_dep_time)
         needs_updating = \
                 any_dep_need_updating or \
@@ -394,7 +395,7 @@ def produce(targets, rules, globes, dry_run=False, always_build=False):
 if __name__ == '__main__':
     args = process_commandline()
     logging.basicConfig(format='%(levelname)s: %(message)s',
-            level=logging.INFO)
+            level=logging.INFO) # TODO add -v option to set to DEBUG
     try:
         try:
             with open('produce.ini') as f:
