@@ -167,6 +167,15 @@ def produce_pattern_to_regex(pattern, globes={}):
 
 ### INSTANTIATED RULES
 
+# An instantiated rules is represented by a dict that correspond to one rule
+# section from the producefile, with the values already expanded. There are two
+# special keys, target (the target as matched by the section header), and type,
+# which must be one of file and task and defaults to file.
+
+# TODO: Wrap these dictionaries, the following functions that operate on them
+# as well as some of the dicts in Production into a Target class for a nicer
+# abstraction.
+
 def run_recipe(irule, dry_run=False):
     if not 'recipe' in irule:
         return
@@ -188,144 +197,6 @@ def run_recipe(irule, dry_run=False):
             # TODO delete target? Good for up-to-dateness, bad for debugging.
             raise ProduceError('recipe failed: {}'.format(recipe))
         # TODO check here if file was created for file rules, raise exception if not?
-
-def list_ddeps(irule):
-    result = []
-    for key, value in irule.items():
-        if key.startswith('dep.'):
-            result.append(value)
-        elif key == 'deps':
-            result.extend(shlex.split(value))
-    return result
-
-class NormalIRule:
-
-    def __init__(self, target, match, avpairs, globes):
-        # TODO is the empty string a good choice?
-        self.lokes = match.groupdict(default = '')
-        self.lokes['target'] = target
-        logging.debug('IRule for target %s has lokes: %s', target, self.lokes)
-        self.dependencies = []
-        for attribute, value in avpairs.items():
-            iv = interpolate(value, globes, self.lokes)
-            if attribute.startswith('dep.'):
-                self.dependencies.append(iv)
-            attribute = attribute.split('.')[-1]
-            if attribute == 'deps':
-                self.dependencies.extend(shlex.split(iv))
-            self.lokes[attribute] = iv
-        if self.get_type() not in ('file', 'task'):
-            raise ProduceError('unknown rule type: {}'.format(self.get_type()))
-
-    def get_type(self):
-        return self.lokes.get('type', 'file')
-
-    def run(self, dry_run=False):
-        if not 'recipe' in self.lokes:
-            return
-        target = self.lokes['target']
-        if self.get_type() == 'task':
-            logging.info('running task %s', target)
-        else:
-            if os.path.exists(target):
-                logging.info('reproducing file %s', target)
-            else:
-                logging.info('producing file %s', target)
-        recipe = self.lokes['recipe']
-        executable = 'bash' # TODO make this configurable
-        print(recipe) # TODO add --s --silent --quiet option
-        if not dry_run:
-            exit = subprocess.call(recipe, shell=True, executable=executable,
-                    stdin=sys.stdin)
-            if exit != 0:
-                # TODO delete target? Good for up-to-dateness, bad for debugging.
-                raise ProduceError('recipe failed: {}'.format(recipe))
-            # TODO check here if file was created for file rules, raise exception if not?
-
-    def get_dependencies(self):
-        return dedup(self.dependencies)
-
-    def compute_uptodateness(self, target, lst, irule_by_target,
-            existence_required=False, always_build=False):
-        """
-        Precondition: self matches target.
-        Returns a tuple (needs_updating, time) where needs_updating is a
-        boolean indicating whether target needs reproducing and time is the
-        minimum age that any target depending on target should have in order
-        not to need reproducing, assuming that needs_updating is False.
-        As a side effect, adds all (transitive) dependencies, including this
-        target itself, to lst, avoiding duplicates.
-        """
-        any_dep_need_updating = False
-        newest_dep_time = 0
-        need_producing = existence_required and not os.path.exists(target)
-        for dependency in self.get_dependencies():
-            irule = irule_by_target[dependency]
-            dep_need_updating, dep_time = irule.compute_uptodateness(
-                    dependency, lst, irule_by_target,
-                    always_build=always_build)
-            any_dep_need_updating = any_dep_need_updating or dep_need_updating
-            newest_dep_time = max(newest_dep_time, dep_time)
-        if self.get_type() == 'file':
-            own_time = mtime(target, default=newest_dep_time)
-        else:
-            own_time = now()
-        logging.debug('target %s time: %s', target, own_time)
-        logging.debug('dependencies: %s', self.get_dependencies())
-        logging.debug('newest dep time: %s', newest_dep_time)
-        needs_updating = \
-                any_dep_need_updating or \
-                self.get_type() == 'task' or \
-                own_time < newest_dep_time or \
-                need_producing or \
-                always_build
-        time = max(own_time, newest_dep_time)
-        if needs_updating:
-            if not target in lst:
-                lst.append(target)
-        return needs_updating, time
-
-    def add_missing_dependencies(self, target, need_updating, irule_by_target):
-        if not target in need_updating:
-            if self.get_type() == 'file' and os.path.exists(target):
-                pass
-            else:
-                need_updating.append(target)
-        if target in need_updating:
-            for dependency in self.get_dependencies():
-                irule = irule_by_target[dependency]
-                irule.add_missing_dependencies(dependency, need_updating,
-                        irule_by_target)
-
-class IngredientIRule:
-
-    """
-    Dummy rule for files that don't match any rule but exist, so all is assumed
-    to be well here. These files are considered 'ingredients' to the production
-    process, they are just assumed to be there.
-    """
-
-    def get_dependencies(self):
-        return []
-
-    def compute_uptodateness(self, target, lst, irule_by_target,
-            existence_required=False, always_build=False):
-        time = mtime(target)
-        return (False, time)
-
-    def add_missing_dependencies(self, target, need_updating, irule_by_target):
-        return
-
-    # no run method needed because it's never called
-
-def make_irule(target, rules, globes):
-    for pattern, avpairs in rules.items():
-        match = pattern.match(target)
-        if match:
-            return NormalIRule(target, match, avpairs, globes)
-    if os.path.exists(target):
-        return IngredientIRule()
-    raise ProduceError('no rule to produce {}'.format(target))
 
 def create_irule(target, rules, globes):
     # Go through rules until a pattern matches the target:
@@ -366,101 +237,14 @@ def create_irule(target, rules, globes):
         return {'target': target, 'type': 'file'}
     raise ProduceError('no rule to produce {}.'.format(target))
 
-### PRODUCE
-
-class DependencyGraph:
-
-    def __init__(self):
-        self.dependencies_by_depender = {}
-        self.dependers_by_dependency = {}
-
-    def add_dependency(self, depender, dependency):
-        if not depender in self.dependencies_by_depender:
-            self.dependencies_by_depender[depender] = []
-        dependencies = self.dependencies_by_depender[depender]
-        if not dependency in dependencies:
-            dependencies.append(dependency)
-        if not dependency in self.dependers_by_dependency:
-            self.dependers_by_dependency[dependency] = []
-        dependers = self.dependers_by_dependency[dependency]
-        if not depender in dependers:
-            dependers.append(depender)
-
-    def get_dependencies_of(self, depender):
-        return self.dependencies_by_depender.get(depender, [])
-
-    def get_dependers_of(self, dependency):
-        return self.dependers_by_dependency.get(dependency, [])
-
-    def topological_order(self, vertices):
-        """
-        Precondition: vertices are all vertices in this graph and the graph
-        has no cycles.
-        Returns the vertices in a topological order, i.e. for each pair of
-        given vertices (x, y) such that x directly depends on y, y appears in
-        the order before x.
-        Algorithm of Tarjan (1976) as given at
-        https://en.wikipedia.org/w/index.php?title=Topological_sorting&oldid=573941575#Algorithms
-        """
-        result = []
-        def visit(n, beam):
-            if n in beam:
-                raise ProduceError('unexpected error: cyclic graph')
-            if n in result:
-                return
-            for dependency in self.get_dependencies_of(n):
-                if dependency in vertices:
-                    visit(dependency, beam + [n])
-            result.append(n)
-        for vertex in vertices:
-            if vertex in result:
-                continue
-            visit(vertex, [])
-        return result
-
-def produce(targets, rules, globes, dry_run=False, always_build=False):
-    """Use the rules to produce the targets."""
-    irule_by_target = {}
-    # Build dependency graph:
-    graph = DependencyGraph()
-    def visit(target, beam):
-        if target in beam:
-            raise ProduceError('cyclic dependency: {}'.format(' -> '.join(
-                beam + [target])))
-        if not target in irule_by_target:
-            # This throws an exception if target does not exist and no rule
-            # matches:
-            irule_by_target[target] = make_irule(target, rules, globes)        
-        irule = irule_by_target[target]
-        for dependency in irule.get_dependencies():
-            graph.add_dependency(target, dependency)
-            visit(dependency, beam + [target])
-    for target in targets:
-        visit(target, [])
-    # Collect dependencies that need updating.
-    # First pass: go from dependencies to dependents and find targets that are
-    # out of date, required but nonexistant, tasks or otherwise have to be run:
-    need_updating = []
-    logging.debug('targets: %s', targets)
-    for target in targets:
-        irule = irule_by_target[target]
-        irule.compute_uptodateness(target, need_updating, irule_by_target,
-                existence_required=True, always_build=always_build)
-    logging.debug('need updating after first pass: %s', need_updating)
-    # Second pass: go from dependents to dependencies and add file dependencies
-    # that we need for updating but that don't currently exist:
-    for subtarget in list(need_updating):
-        irule = irule_by_target[subtarget]
-        irule.add_missing_dependencies(target, need_updating, irule_by_target)
-    logging.debug('need updating after second pass: %s', need_updating)
-    if not need_updating:
-        logging.info('all targets are up to date')
-    # Run their recipes in a topological order:
-    order = graph.topological_order(need_updating)
-    logging.debug('in order: %s', order)
-    for subtarget in order:
-        irule = irule_by_target[subtarget]
-        irule.run(dry_run=dry_run)
+def list_ddeps(irule):
+    result = []
+    for key, value in irule.items():
+        if key.startswith('dep.'):
+            result.append(value)
+        elif key == 'deps':
+            result.extend(shlex.split(value))
+    return result
 
 ### PRODUCTION
 
@@ -602,8 +386,6 @@ if __name__ == '__main__':
                         'produce.ini.')
         Production(targets, rules, globes, args.dry_run, args.always_build
                 ).produce(targets)
-        #produce(targets, rules, globes, dry_run=args.dry_run,
-        #        always_build=args.always_build)
     except ProduceError as e:
         logging.error(e) # TODO better formatting
         sys.exit(1)
