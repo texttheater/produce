@@ -392,6 +392,88 @@ def produce(targets, rules, globes, dry_run=False, always_build=False):
         irule = irule_by_target[subtarget]
         irule.run(dry_run=dry_run)
 
+### PRODUCTION
+
+class Production:
+
+    """
+    An object of this class represents one run of produce. The methods are the
+    building blocks of the algorithm, the attributes represent options and
+    state that changes during the production process.
+    """
+
+    def __init__(self, targets, rules, dry_run, always_build):
+        self.targets = []
+        self.rules = rules # maps patterns to key-uninstantiated value maps ("rules")
+        self.dry_run = dry_run
+        self.always_build = always_build
+        self.irules = {} # maps targets to key-instantiated value maps ("instantiated rules")
+        self.out_of_date_targets = set()
+        self.target_ddeps = {} # direct dependencies
+        self.target_time = {}
+        for target in targets:
+            self.add_target(target, [])
+
+    def add_target(target, beam):
+        # Catch cyclic dependencies:
+        if target in beam:
+            raise ProduceError('cyclic dependency: {}'.format(' -> '.join(beam)
+                    ))
+        # Stop on encountering a target for the second time:
+        if target in self.targets:
+            return
+        # Make instantiated rule:
+        irule = create_irule(target) # TODO write
+        # Determine dependencies:
+        ddeps = list_ddeps(irule) # TODO write
+        max_ddep_time = 0
+        for ddep in ddeps:
+            add_target(ddep, beam + [target])
+        # Determine time of target:
+        target_type = irule.get('type', 'file')
+        if target_type == 'task':
+            time = 0
+        elif target_type == 'file':
+            time = mtime(target, 0)
+        else:
+            raise ProduceError('unknown type {} for target {}'.format(
+                    target_type, target))
+        # Determine whether target is out of date:
+        # 1. Tasks are always considered out of date.
+        # 2. If any dependency is newer than the target, the target is out of
+        #    date.
+        # 3. If any dependency is out of date, so is the target.
+        if target_type == 'task' \
+                or max([self.target_time[ddep] for ddep in ddeps]) > time \
+                or any([is_out_of_date(ddep) for ddep in ddeps]):
+            out_of_date = True
+        # Store information about this target:
+        self.targets.append(targets)
+        self.irules[target] = irule
+        self.ddeps[target] = ddeps
+        self.target_time[target] = time
+        if out_of_date:
+            self.out_of_date_targets.add(target)
+
+    def is_out_of_date(self, target):
+        return target in self.out_of_date_targets
+
+    def build(self, target):
+        for ddep in self.target_ddeps[target]:
+            self.build_if_out_of_date(ddep)
+        run_recipe(self.irules[target]) # raises exception if recipe fails TODO write
+        self.out_of_date_targets.remove(target)
+
+    def build_if_out_of_date(self, target):
+        if not self.is_out_of_date(target):
+            return False
+        self.build(target)
+        return True
+
+    def produce(self, targets):
+        if all([not build_if_out_of_date(target) for target in targets]):
+            logging.info('all targets are up to date')
+
 ### MAIN
 
 if __name__ == '__main__':
