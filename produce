@@ -190,12 +190,12 @@ def run_recipe(irule, dry_run=False):
         # TODO check here if file was created for file rules, raise exception if not?
 
 def list_ddeps(irule):
-    result = set()
+    result = []
     for key, value in irule.items():
         if key.startswith('dep.'):
-            result.add(value)
+            result.append(value)
         elif key == 'deps':
-            result.update(shlex.split(value))
+            result.extend(shlex.split(value))
     return result
 
 class NormalIRule:
