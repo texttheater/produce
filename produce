@@ -327,6 +327,44 @@ def make_irule(target, rules, globes):
         return IngredientIRule()
     raise ProduceError('no rule to produce {}'.format(target))
 
+def create_irule(target, rules, globes):
+    # Go through rules until a pattern matches the target:
+    for pattern, avpairs in rules.items():
+        match = pattern.match(target)
+        if match:
+            # Dictionary representing the instantiated rule:
+            result = {}
+            # Dictionary for local variables:
+            # TODO is the empty string a good default?
+            lokes = match.groupdict(default = '')
+            # Special attribute: target
+            lokes['target'] = target
+            # Process attributes and their values:
+            for attribute, value in avpairs.items():
+                # Remove prefix from attribute to get local variable name:
+                loke = attribute.split('.')[-1]
+                if loke == 'target':
+                    raise ProduceError('cannot overwrite "target" attribute ' +
+                            'in rule for {}'.format(target))
+                # Do expansions in value:
+                iv = interpolate(value, globes, lokes)
+                # Attribute retains prefix:
+                result[attribute] = iv
+                # Local variable does not retain prefix:
+                lokes[loke] = iv
+            logging.debug('instantiated rule for target %s has lokes: %s',
+                    target, self.lokes)
+            result['type'] = result.get('type', 'file')
+            if result['type'] not in ('file', 'task'):
+                raise ProduceError('unknown type {} for target {}'.format(
+                    target_type, target))
+            return result
+    if os.path.exists(target):
+        # Although there is no rule to make the target, the target is a file
+        # that exists, so we can use it as an ingredient.
+        return {'target': target, 'type': 'file'}
+    raise ProduceError('no rule to produce {}.'.format(target))
+
 ### PRODUCE
 
 class DependencyGraph:
@@ -433,9 +471,10 @@ class Production:
     state that changes during the production process.
     """
 
-    def __init__(self, targets, rules, dry_run, always_build):
+    def __init__(self, targets, rules, globes, dry_run, always_build):
         self.targets = []
         self.rules = rules # maps patterns to key-uninstantiated value maps ("rules")
+        self.globes = globes
         self.dry_run = dry_run
         self.always_build = always_build
         self.irules = {} # maps targets to key-instantiated value maps ("instantiated rules")
@@ -454,7 +493,7 @@ class Production:
         if target in self.targets:
             return
         # Make instantiated rule:
-        irule = self.create_irule(target) # TODO write
+        irule = self.create_irule(target, self.rules, self.globes) # TODO write
         # Determine dependencies:
         ddeps = list_ddeps(irule)
         max_ddep_time = 0
@@ -464,11 +503,8 @@ class Production:
         target_type = irule.get('type', 'file')
         if target_type == 'task':
             time = 0
-        elif target_type == 'file':
-            time = mtime(target, 0)
         else:
-            raise ProduceError('unknown type {} for target {}'.format(
-                    target_type, target))
+            time = mtime(target, 0)
         # Determine whether target is out of date:
         # 1. Tasks are always considered out of date.
         # 2. If any dependency is newer than the target, the target is out of
