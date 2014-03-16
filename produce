@@ -189,6 +189,15 @@ def run_recipe(irule, dry_run=False):
             raise ProduceError('recipe failed: {}'.format(recipe))
         # TODO check here if file was created for file rules, raise exception if not?
 
+def list_ddeps(irule):
+    result = set()
+    for key, value in irule.items():
+        if key.startswith('dep.'):
+            result.add(value)
+        elif key == 'deps':
+            result.update(shlex.split(value))
+    return result
+
 class NormalIRule:
 
     def __init__(self, target, match, avpairs, globes):
@@ -445,9 +454,9 @@ class Production:
         if target in self.targets:
             return
         # Make instantiated rule:
-        irule = create_irule(target) # TODO write
+        irule = self.create_irule(target) # TODO write
         # Determine dependencies:
-        ddeps = list_ddeps(irule) # TODO write
+        ddeps = list_ddeps(irule)
         max_ddep_time = 0
         for ddep in ddeps:
             add_target(ddep, beam + [target])
@@ -483,7 +492,7 @@ class Production:
     def build(self, target):
         for ddep in self.target_ddeps[target]:
             self.build_if_required(ddep)
-        run_recipe(self.irules[target]) # raises exception if recipe fails TODO write
+        run_recipe(self.irules[target]) # raises exception if recipe fails
         self.out_of_date_targets.remove(target)
 
     def build_if_required(self, target):
