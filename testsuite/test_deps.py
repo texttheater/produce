@@ -4,10 +4,13 @@ class DepTest(ProduceTestCase):
 
     # In this project, we didn't call the producefile produce.ini, but
     # something custom, so we have to pass that as an option to produce:
-    def produce(self, *targets):
-        ProduceTestCase.produce(self, *targets, **{'-f': 'deps.ini'})
+    def produce(self, *targets, **kwargs):
+        kwargs.update({'-f': 'deps.ini'})
+        ProduceTestCase.produce(self, *targets, **kwargs)
 
     def test_full(self):
+        self.assertOriginalState()
+        self.produce('a', **{'-n': None}) # dry run
         self.assertOriginalState()
         self.produce('a')
         self.assertState(['a', 'b', 'c', 'd', 'e'], [])
