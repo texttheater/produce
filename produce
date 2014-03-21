@@ -257,16 +257,19 @@ class Production:
     """
 
     def __init__(self, targets, rules, globes, dry_run, always_build):
-        self.targets = []
+        # General properties, passed as arguments to constructor:
         self.rules = rules # maps patterns to key-uninstantiated value maps ("rules")
         self.globes = globes
         self.dry_run = dry_run
         self.always_build = always_build
-        self.irules = {} # maps targets to key-instantiated value maps ("instantiated rules")
-        self.out_of_date_targets = set()
-        self.missing_targets = set()
+        # Initialize fields to store information about individual targets:
+        self.targets = []
+        self.target_irule = {} # maps targets to key-instantiated value maps ("instantiated rules")
         self.target_ddeps = {} # direct dependencies
         self.target_time = {}
+        self.out_of_date_targets = set()
+        self.missing_targets = set()
+        # Now fill them:
         for target in targets:
             self.add_target(target, [])
 
@@ -280,10 +283,9 @@ class Production:
             return
         # Make instantiated rule:
         irule = create_irule(target, self.rules, self.globes)
-        # Determine dependencies:
+        # Determine dependencies and add them recursively:
         ddeps = list_ddeps(irule)
         logging.debug('direct dependencies of %s: %s', target, ddeps)
-        max_ddep_time = 0
         for ddep in ddeps:
             self.add_target(ddep, beam + [target])
         # Determine type, existence and time of target:
@@ -297,7 +299,9 @@ class Production:
                 time = 0
             else:
                 time = mtime(target, 0)
-        # Determine whether target is out of date:
+        # Determine whether target is out of date, based on information about
+        # dependencies, all of which are at this point guaranteed to have been
+        # added:
         # 1. Tasks are always considered out of date.
         # 2. If any dependency is newer than the target, the target is out of
         #    date.
@@ -311,7 +315,7 @@ class Production:
         logging.debug('%s out of date? %s', target, out_of_date)
         # Store information about this target:
         self.targets.append(targets)
-        self.irules[target] = irule
+        self.target_irule[target] = irule
         self.target_ddeps[target] = ddeps
         self.target_time[target] = time
         if out_of_date:
@@ -328,7 +332,7 @@ class Production:
     def build(self, target):
         for ddep in self.target_ddeps[target]:
             self.build_if_required(ddep)
-        run_recipe(self.irules[target]) # raises exception if recipe fails
+        run_recipe(self.target_irule[target]) # raises exception if recipe fails
         self.out_of_date_targets.discard(target)
         self.missing_targets.discard(target)
 
