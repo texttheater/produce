@@ -225,6 +225,8 @@ class NormalIRule:
         As a side effect, adds all (transitive) dependencies, including this
         target itself, to lst, avoiding duplicates.
         """
+        logging.debug('NormalIRule computing uptodateness for %s, always build: %s',
+                target, always_build)
         any_dep_need_updating = False
         newest_dep_time = 0
         need_producing = existence_required and not os.path.exists(target)
@@ -278,6 +280,8 @@ class IngredientIRule:
 
     def compute_uptodateness(self, target, lst, irule_by_target,
             existence_required=False, always_build=False):
+        logging.debug('IngredientIRule computing uptodateness for %s, always build: %s',
+                target, always_build)
         time = mtime(target)
         return (False, time)
 
