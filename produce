@@ -18,7 +18,6 @@ from configparser import ConfigParser
 # TODO variation on the file rule type that unconditionally runs the recipe
 # but with a temp file with target, then percolates dirtiness only if the new
 # file differs from the existing version
-# TODO full Python expressions with access to all vars for interpolations
 # TODO dependency globbing using Python expressions that evaluate to sequences,
 # wrapped in %@{...}
 # TODO flat producing: run the recipe of the target, touch all existing
