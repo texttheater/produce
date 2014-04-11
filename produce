@@ -17,7 +17,8 @@ from configparser import ConfigParser
 
 # TODO variation on the file rule type that unconditionally runs the recipe
 # but with a temp file with target, then percolates dirtiness only if the new
-# file differs from the existing version
+# file differs from the existing version - e.g. for files that depend on data
+# from a database.
 # TODO dependency globbing using Python expressions that evaluate to sequences,
 # wrapped in %@{...}
 # TODO flat producing: run the recipe of the target, touch all existing

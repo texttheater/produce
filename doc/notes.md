@@ -13,7 +13,7 @@ Target status taxonomy (draft)
    cyclic
     is_own_ddep
     has_ddep_with_status_cyclic
-   missind_deps
+   missing_deps
     no_matching_rule
     has_ddep_with_status_missing_deps
   unavailable
