@@ -1,7 +1,0 @@
-#!/bin/bash
-
-# NOTE: the testsuite is currently a stub, it doesn't really do anything yet.
-
-export PATH=$(pwd):$PATH
-cd testsuite
-python3 -m unittest
