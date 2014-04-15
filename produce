@@ -200,6 +200,8 @@ def run_recipe(irule, dry_run=False):
 
 def create_irule(target, rules, globes):
     # Go through rules until a pattern matches the target:
+    # TODO allow rules to impose additional constraints on their matching using a
+    # "match" or "check" attribute.
     for pattern, avpairs in rules.items():
         match = pattern.match(target)
         if match:
@@ -314,7 +316,7 @@ class Production:
                 or self.always_build
         logging.debug('%s out of date? %s', target, out_of_date)
         # Store information about this target:
-        self.targets.append(targets)
+        self.targets.append(target)
         self.target_irule[target] = irule
         self.target_ddeps[target] = ddeps
         self.target_time[target] = time
