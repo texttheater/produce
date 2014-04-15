@@ -1,0 +1,122 @@
+Desiderata
+==========
+
+* make requested files based on their dependencies
+* don't do unneccesary work (use timestamps)
+* intermediate files can be deleted later without affecting up-to-dateness
+
+The Algorithm
+=============
+
+1. Starting from targets requested by user, build the dependency graph.
+   For each encountered target:
+   a) Fail on cyclic dependency.
+   b) Stop if the target has already been processed.
+   c) Determine which rule to use (the first in the Producefile that matches).
+   d) List direct dependencies and process them recursively.
+   e) Determine whether the target is missing, determine its time [2]
+   f) Determine whether the target is out of date [1]
+   g) Store information about target: rule, direct dependencies, time,
+      whether out of date, whether missing
+
+2. For each target requested by the user, call build_if required [3].
+
+[1] A target is out of date if
+* it is of type 'task', or
+* any direct dependency is newer [2], or
+* any direct dependency is out of date, or
+* the "always build" option is on
+
+[2] The time of a target is its file system mtime, or 0 if it doesn't exist or
+    is of type 'task'. A target is missing if it is of type 'file' and does not
+    exist.
+
+[3] build_if_required(target):
+        if target is out of date of missing:
+             build(target)
+
+    build(target):
+        for ddep in direct dependencies of target:
+             build_if_required(ddep)
+        run_recipe(target)
+        out_of_date[target] := False
+        missing[target] := False
+
+Target status taxonomy (draft)
+==============================
+
+ status
+  error
+   cyclic
+    is_own_ddep
+    has_ddep_with_status_cyclic
+   missing_deps
+    no_matching_rule
+    has_ddep_with_status_missing_deps
+  unavailable
+   out_of_date
+    task
+    out_of_date_through_age
+     has_ddep_with_status_existent_which_is_younger
+     has_ddep_with_status_out_of_date
+   nonexistant
+  existant
+   out_of_date
+   up_to_date
+
+Make vs. Produce
+================
+
+In both Make and Produce, a rule specifies:
+* the target (more precisely, a pattern to match one)
+* a list of dependencies
+* a recipe for creating the target
+
+Produce has a minimally more verbose syntax for a rule:
+
+# Make:
+target : dep1 dep2
+	recipe
+
+# Produce:
+[target pattern]
+dep.name1 = dep1
+dep.name2 = dep2
+recipe = recipe
+...
+
+---
+
+Make wart:
+Only the first dependency is named ($<), others must be spelled out all over again in the recipe (DRY violation)
+
+Produce solution:
+name all dependencies, each goes into an attribute with the prefix "dep."
+Dependencies you don't need to refer to in the recipe can just be listed in one attribute (deps).
+
+---
+
+Make wart:
+Additional properties of targets, such as "phony", are specified in a counterintuitive wary.
+
+Produce solution:
+Besides dependencies and recipes, rules can have unlimited attributes. Some of them have special meaning, such as type = file (default) | task ("phony target")
+
+---
+
+Make wart:
+Selecting the right rule for a target is not very sophisticated, there is essentially only globbing.
+
+Produce solution:
+* full regular expressions if needed
+* additional checks planned
+
+---
+
+Make wart:
+Mapping between target and dependencies that goes beyond replacing an extensions requires the use of Make functions which are limited and arcane by today's standards. I just want to write Python.
+e.g. .model1 -> model2
+
+Produce solution:
+* multiple wildcards allowed
+* arbitrary Python expressions for generating dependencies
