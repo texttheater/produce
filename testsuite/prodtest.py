@@ -43,6 +43,8 @@ class ProduceTestCase(unittest.TestCase):
         self.assertEqual(set(filelist), set(os.listdir(directory)))
 
     def produce(self, *args, **kwargs):
+        # TODO provide an API that throws exceptions rather than exiting,
+        # and test that
         self.runCommand(['produce'] + dict2opts(kwargs) + list(args))
 
     def assertFileExists(self, path):
