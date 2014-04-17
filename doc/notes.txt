@@ -1,8 +1,19 @@
+Build automation
+================
+
+* managing the creation of files generated from other files
+* classical case: compiling C programs
+  executables depend on object files, object files depend on source and header files
+* another use case: NLP pipeline (Groningen Meaning Bank) where knowledge is frequently added
+* yet another one: machine learning experiments: data preprocessing, splitting, folding, training,
+  decoding, evaluating, averaging over folds
+* Pushing Make to the limits of my patience, then decided it was time to redo it
+
 Desiderata
 ==========
 
-* make requested files based on their dependencies
-* don't do unneccesary work (use timestamps)
+* automatically run all the commands to build the requested file based on its dependencies
+* don't build files that are already up-to-date (use timestamps)
 * intermediate files can be deleted later without affecting up-to-dateness
 
 The Algorithm
@@ -19,28 +30,31 @@ The Algorithm
    g) Store information about target: rule, direct dependencies, time,
       whether out of date, whether missing
 
-2. For each target requested by the user, call build_if required [3].
+2. For each target requested by the user, call build_if_necessary [3].
 
 [1] A target is out of date if
 * it is of type 'task', or
 * any direct dependency is newer [2], or
-* any direct dependency is out of date, or
+* any direct dependency is out of date [4], or
 * the "always build" option is on
 
 [2] The time of a target is its file system mtime, or 0 if it doesn't exist or
     is of type 'task'. A target is missing if it is of type 'file' and does not
     exist.
 
-[3] build_if_required(target):
-        if target is out of date of missing:
+[3] build_if_necessary(target):
+        if target is marked as out of date or missing:
              build(target)
 
     build(target):
         for ddep in direct dependencies of target:
-             build_if_required(ddep)
+             build_if_necessary(ddep)
         run_recipe(target)
-        out_of_date[target] := False
-        missing[target] := False
+        mark target as not out of date
+        mark target as not missing
+
+[4] a *missing* direct dependency is not a sufficient reason, hence the
+    distinction between out of date and missing
 
 Target status taxonomy (draft)
 ==============================
@@ -69,7 +83,7 @@ Make vs. Produce
 
 In both Make and Produce, a rule specifies:
 * the target (more precisely, a pattern to match one)
-* a list of dependencies
+* a list of prerequisites
 * a recipe for creating the target
 
 Produce has a minimally more verbose syntax for a rule:
@@ -120,3 +134,14 @@ e.g. .model1 -> model2
 Produce solution:
 * multiple wildcards allowed
 * arbitrary Python expressions for generating dependencies
+
+Why Python?
+===========
+
+* Make it easy for users: one single script that can just be dropped in $PATH, no dependencies
+* requires a rich standard library, which is one of the things Python excels at, e.g.:
+** ConfigParser for reading Producefiles
+** argparse for handling command-line arguments
+** shlex for parsing lists
+** subprocess for executing recipes
+** eval for integrating Python expressions
