@@ -189,6 +189,8 @@ def run_recipe(irule, dry_run=False):
             logging.info('building file %s', target)
     recipe = irule['recipe']
     executable = 'bash' # TODO make configurable
+    if recipe.startswith('\n'):
+        recipe = recipe[1:]
     print(recipe) # TODO add --s --silent --quiet option
     if not dry_run:
         exit = subprocess.call(recipe, shell=True, executable=executable,
