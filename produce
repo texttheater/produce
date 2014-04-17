@@ -67,6 +67,8 @@ def process_commandline():
             help="""use FILE as a producefile""")
     parser.add_argument('-n', '--dry-run', action='store_true', help="""print
             the commands that would be executed, but do not execute them""")
+    parser.add_argument('-d', '--debug', action='store_true', help="""print
+            debugging information""")
     parser.add_argument('target', nargs='*', help="""the target(s) to produce
             - if omitted, default target from producefile is used""")
     return parser.parse_args()
@@ -354,8 +356,12 @@ class Production:
 
 if __name__ == '__main__':
     args = process_commandline()
+    if args.debug:
+        level = logging.DEBUG
+    else:
+        level = logging.INFO
     logging.basicConfig(format='%(levelname)s: %(message)s',
-            level=logging.INFO) # TODO add -v option to set to DEBUG
+            level=level)
     try:
         try:
             with open(args.file) as f:
