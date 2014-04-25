@@ -291,7 +291,7 @@ class Production:
         irule = create_irule(target, self.rules, self.globes)
         # Determine dependencies and add them recursively:
         ddeps = list_ddeps(irule)
-        logging.debug('direct dependencies of %s: %s', target, ddeps)
+        logging.debug('%s <- %s', target, ddeps)
         for ddep in ddeps:
             self.add_target(ddep, beam + [target])
         # Determine type, existence and time of target:
