@@ -128,7 +128,7 @@ Produce solution:
 ---
 
 Make wart:
-Mapping between target and dependencies that goes beyond replacing an extensions requires the use of Make functions which are limited and arcane by today's standards. I just want to write Python.
+Mapping between target and dependencies that goes beyond replacing an extension requires the use of Make functions which are limited and arcane by today's standards. I just want to write Python.
 e.g. .model1 -> model2
 
 Produce solution:
