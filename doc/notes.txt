@@ -107,11 +107,12 @@ Only the first dependency is named ($<), others must be spelled out all over aga
 Produce solution:
 name all dependencies, each goes into an attribute with the prefix "dep."
 Dependencies you don't need to refer to in the recipe can just be listed in one attribute (deps).
+Naming convention: extension; name for executables
 
 ---
 
 Make wart:
-Additional properties of targets, such as "phony", are specified in a counterintuitive wary.
+Additional properties of targets, such as "phony", are specified in a counterintuitive way.
 
 Produce solution:
 Besides dependencies and recipes, rules can have unlimited attributes. Some of them have special meaning, such as type = file (default) | task ("phony target")
@@ -138,10 +139,11 @@ Produce solution:
 Why Python?
 ===========
 
-* Make it easy for users: one single script that can just be dropped in $PATH, no dependencies
-* requires a rich standard library, which is one of the things Python excels at, e.g.:
-** ConfigParser for reading Producefiles
-** argparse for handling command-line arguments
-** shlex for parsing lists
-** subprocess for executing recipes
-** eval for integrating Python expressions
+* Make it easy for users: one single script that can just be dropped in $PATH, no dependencies except Python
+** requires a rich standard library, which is one of the things Python excels at, e.g.:
+*** ConfigParser for reading Producefiles
+*** argparse for handling command-line arguments
+*** shlex for parsing lists
+*** subprocess for executing recipes
+*** eval for integrating Python expressions
+*** logging for info messages and debugging
