@@ -102,6 +102,14 @@ recipe = recipe
 ---
 
 Make wart:
+need to change $ into $$ in shell scripts
+
+Produce solution:
+Use %. Who needs that? (Okay, Prolog comments and Perl hashes.)
+
+---
+
+Make wart:
 Only the first dependency is named ($<), others must be spelled out all over again in the recipe (DRY violation)
 
 Produce solution:
