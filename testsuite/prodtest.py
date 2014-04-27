@@ -62,6 +62,11 @@ class ProduceTestCase(unittest.TestCase):
     def assertNewerThan(self, newFile, oldFile):
         self.assertTrue(self.mtime(newFile) > self.mtime(oldFile))
 
+    def assertFileContents(self, fileName, expectedContents):
+        with open(fileName) as f:
+            actualContents = f.read()
+        self.assertEqual(expectedContents, actualContents)
+
     def mtime(self, path):
         return os.stat(path).st_mtime
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import ast
 import errno
 import logging
 import os
@@ -230,6 +231,13 @@ def create_irule(target, rules, globes):
                 result[attribute] = iv
                 # Local variable does not retain prefix:
                 lokes[loke] = iv
+                # If there is a condition and it isn't met, we stop processing
+                # attributes so they don't raise errors:
+                if attribute == 'cond' and not ast.literal_eval(iv):
+                    break
+            # If there is a condition and it isn't met, go to the next rule:
+            if 'cond' in result and not ast.literal_eval(result['cond']):
+                continue
             logging.debug('instantiated rule for target %s has lokes: %s',
                     target, lokes)
             result['type'] = result.get('type', 'file')
@@ -393,7 +401,7 @@ if __name__ == '__main__':
         targets = args.target
         if not targets:
             if 'default' in globes:
-                targets = [globes['default']]
+                targets = shlex.split(globes['default'])
             else:
                 raise ProduceError('Don\'t know what to produce. Specify a ' +
                         'target on the command line or a default target in ' +
