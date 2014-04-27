@@ -102,14 +102,6 @@ recipe = recipe
 ---
 
 Make wart:
-need to change $ into $$ in shell scripts
-
-Produce solution:
-Use %. Who needs that? (Okay, Prolog comments and Perl hashes.)
-
----
-
-Make wart:
 Only the first dependency is named ($<), others must be spelled out all over again in the recipe (DRY violation)
 
 Produce solution:
@@ -128,9 +120,18 @@ Besides dependencies and recipes, rules can have unlimited attributes. Some of t
 ---
 
 Make wart:
-Selecting the right rule for a target is not very sophisticated, there is essentially only globbing.
+need to change $ into $$ in shell scripts
 
 Produce solution:
+Use %. Who needs that? (Okay, Prolog comments and Perl hashes.)
+
+---
+
+Make wart:
+Selecting the right rule for a target is not very sophisticated, there is essentially only globbing with a single wildcard.
+
+Produce solution:
+* multiple wildcards allowed!
 * full regular expressions if needed
 * additional checks planned
 
@@ -141,7 +142,6 @@ Mapping between target and dependencies that goes beyond replacing an extension 
 e.g. .model1 -> model2
 
 Produce solution:
-* multiple wildcards allowed
 * arbitrary Python expressions for generating dependencies
 
 Why Python?

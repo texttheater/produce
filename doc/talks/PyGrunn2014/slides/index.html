@@ -54,18 +54,103 @@
 				</section>
 
 				<section>
-					<h2>Test</h2>
+					<h2>Make syntax</h2>
 					<pre><code data-trim>
-[%{name}]
-dep.o = %{name}.o
-recipe = cc -o %{target} %{o}
+# Compile
+%.o : %.c
+	cc -c $&lt;
 
-[out/%{name}.o]
-dep.c = %{name}.c
-recipe = cc -c %{c}
+# Link
+% : %.o
+	cc -o $@ $&lt;
 					</code></pre>
 				</section>
 
+				<section>
+					<h2>Produce syntax</h2>
+					<pre><code data-trim>
+# Compile
+[%{name}.o]
+dep.c = %{name}.c
+recipe = cc -c %{c}
+
+# Link
+[%{name}]
+dep.o = %{name}.o
+recipe = cc -o %{target} %{o}
+					</code></pre>
+					<aside class="notes">
+						A slight increase in verbosity, but an increase all
+						the same. What does it buy us?
+					</aside>
+				</section>
+
+				<section>
+					<h2>Make: only first prerequisite named</h2>
+					<!-- TODO example -->
+					<ul>
+						<li>DRY violation</li>
+					</ul>
+				</section>
+
+				<section>
+					<h2>Produce: name prerequisites</h2>
+					<!-- TODO example with dep. -->
+				</section>
+
+				<section>
+					<h2>You don’t <em>have</em> to name them</h2>
+					<!-- TODO example where recipe needs only the base name (pdflatex and bibtex) -->
+				</section>
+
+				<section>
+					<h2>Make: a single wildcard</h2>
+					<!-- TODO blood-curling example, perhaps from GMB Makefile with part and doc -->
+					<ul>
+						<li>also: $$ everywhere</li>
+					</ul>
+				</section>
+
+				<section>
+					<h2>Produce: any number of wildcards…</h2>
+					<!-- TODO example -->
+				</section>
+
+				<section>
+					<h2>…or even regular expressions…</h2>
+					<!-- TODO example -->
+				</section>
+
+				<!-- TODO have to implement this and, harder, find a good example -->
+				<!--<section> 
+					<h2>…or matching conditions.</h2>
+				</section>-->
+
+				<section>
+					<h2>Make: arcane string manipulation</h2>
+					<!-- TODO example -->
+				</section>
+
+				<section>
+					<h2>Produce: just write Python</h2>
+					<!-- TODO example, with numbers -->
+				</section>
+
+				<section>
+					<h2>Make: counterintuitive declarations</h2>
+					<!-- TODO: .PHONY example -->
+				</section>
+
+				<section>
+					<h2>Produce: rule variables</h2>
+					<!-- TODO task example -->
+					<ul>
+						<li>special variable <em>type</em>:
+						<code>file</code> (default) or <code>task</code></li>
+						<li>special variable <em>target</em></li>
+						<li>user-defined variables: by matching or by attribute</li>
+					</ul>
+				</section>
 			</div>
 
 		</div>
