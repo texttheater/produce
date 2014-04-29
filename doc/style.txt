@@ -1,0 +1,17 @@
+Q: Python is not a suitable language for inline computations/expansions because
+   you need newlines and indentations.
+
+A: %{...} expansions can contain newlines and indentation. In order not to
+   break the flow of values they are part of, consider using an intemediate
+   variable:
+
+   [target%{i}.txt]
+   a = %{
+       def f(x): # start with newline and four spaces
+           return x - 1
+
+       f(int(i)) # TODO make it so that this works!
+       }
+   # closing brace also indented four spaces
+   dep.previous = target%{a}.txt
+   recipe = cp %{previous} %{target}
