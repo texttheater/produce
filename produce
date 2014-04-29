@@ -311,12 +311,15 @@ class Production:
         if target_type == 'task':
             missing = False
             time = 0
+            logging.debug('%s is a task', target)
         else:
             missing = not os.path.exists(target)
             if missing:
                 time = max_ddep_time
             else:
                 time = mtime(target, 0)
+                logging.debug('%s time: %s', target, time)
+        logging.debug('%s missing? %s', target, missing)
         # Determine whether target is out of date, based on information about
         # dependencies, all of which are at this point guaranteed to have been
         # added:
@@ -325,6 +328,8 @@ class Production:
         #    date.
         # 3. If any dependency is out of date, so is the target.
         # 4. Consider it out of date if the always_build option is True.
+        if self.always_build:
+            logging.debug('%s is out of date because -B', target)
         out_of_date = target_type == 'task' \
                 or (not missing and ddeps \
                 and max([self.target_time[ddep] for ddep in ddeps]) > time) \
