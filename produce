@@ -331,7 +331,7 @@ class Production:
         if self.always_build:
             logging.debug('%s is out of date because -B', target)
         out_of_date = target_type == 'task' \
-                or (not missing and ddeps \
+                or (ddeps \
                 and max([self.target_time[ddep] for ddep in ddeps]) > time) \
                 or any([self.is_out_of_date(ddep) for ddep in ddeps]) \
                 or self.always_build
