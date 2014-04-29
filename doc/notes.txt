@@ -34,13 +34,14 @@ The Algorithm
 
 [1] A target is out of date if
 * it is of type 'task', or
-* any direct dependency is newer [2], or
-* any direct dependency is out of date [4], or
+* some direct dependency is newer [2], or
+* some direct dependency is out of date [4], or
 * the "always build" option is on
 
-[2] The time of a target is its file system mtime, or 0 if it doesn't exist or
-    is of type 'task'. A target is missing if it is of type 'file' and does not
-    exist.
+[2] The time of a target is 0 if it is a task,
+    its file system mtime if it is a file and exists,
+    the time of its newest direct dependency if it is a file and does not exist
+    (or 0 if no dependency)
 
 [3] build_if_necessary(target):
         if target is marked as out of date or missing:
