@@ -302,6 +302,10 @@ class Production:
         logging.debug('%s <- %s', target, ddeps)
         for ddep in ddeps:
             self.add_target(ddep, beam + [target])
+        if ddeps:
+            max_ddep_time = max([self.target_time[ddep] for ddep in ddeps])
+        else:
+            max_ddep_time = 0
         # Determine type, existence and time of target:
         target_type = irule['type']
         if target_type == 'task':
@@ -310,7 +314,7 @@ class Production:
         else:
             missing = not os.path.exists(target)
             if missing:
-                time = 0
+                time = max_ddep_time
             else:
                 time = mtime(target, 0)
         # Determine whether target is out of date, based on information about
@@ -322,7 +326,7 @@ class Production:
         # 3. If any dependency is out of date, so is the target.
         # 4. Consider it out of date if the always_build option is True.
         out_of_date = target_type == 'task' \
-                or (ddeps \
+                or (not missing and ddeps \
                 and max([self.target_time[ddep] for ddep in ddeps]) > time) \
                 or any([self.is_out_of_date(ddep) for ddep in ddeps]) \
                 or self.always_build
