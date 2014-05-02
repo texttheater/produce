@@ -25,8 +25,6 @@ from configparser import ConfigParser
 # TODO flat producing: run the recipe of the target, touch all existing
 # dependencies
 # TODO optionally delete intermediate files
-# TODO attribute that automatically tees STDERR (possibly also STDOUT) of a
-# recipe into a logfile corresponding to the target, e.g. %{target}.log
 
 ### UTILITIES
 
@@ -143,8 +141,6 @@ def section_name_to_regex(name, globes={}):
         return produce_pattern_to_regex(name, globes)
 
 def produce_pattern_to_regex(pattern, globes={}):
-    # TODO distinguish syntactically between matchers and variable references?
-    # Would allow to override global variables by matching.
     ip = interpolate(pattern, globes, {}, ignore_undefined=True,
             keep_escaped=True)
     regex = ''
@@ -205,8 +201,6 @@ def run_recipe(irule, dry_run=False):
 
 def create_irule(target, rules, globes):
     # Go through rules until a pattern matches the target:
-    # TODO allow rules to impose additional constraints on their matching using a
-    # "match" or "check" attribute.
     for pattern, avpairs in rules.items():
         match = pattern.match(target)
         if match:
