@@ -366,6 +366,8 @@ class Production:
         return True
 
     def produce(self, targets):
+        # TODO parallel building. Will probably have to resurrect the graph
+        # algorithm for topologically ordering targets.
         if all([not self.build_if_required(target) for target in targets]):
             logging.info('all targets are up to date')
 
