@@ -13,6 +13,7 @@ import time
 
 from collections import OrderedDict
 from configparser import ConfigParser
+from tempfile import NamedTemporaryFile
 
 ### PLANNED FEATURES
 
@@ -187,13 +188,19 @@ def run_recipe(irule, dry_run=False):
         else:
             logging.info('building file %s', target)
     recipe = irule['recipe']
-    executable = 'bash' # TODO make configurable
+    executable = irule.get('shell', 'bash')
     if recipe.startswith('\n'):
         recipe = recipe[1:]
     print(recipe) # TODO add --s --silent --quiet option
     if not dry_run:
-        exit = subprocess.call(recipe, shell=True, executable=executable,
-                stdin=sys.stdin)
+        with NamedTemporaryFile(mode='w') as recipefile:
+            recipefile.write(recipe)
+            recipefile.flush()
+            # FIXME using python as executable doesn't work because
+            # configparser strips all leading space. We really need to get rid
+            # of configparser.
+            exit = subprocess.call([executable, recipefile.name],
+                    stdin=sys.stdin)
         if exit != 0:
             # TODO delete target? Good for up-to-dateness, bad for debugging.
             raise ProduceError('recipe failed: {}'.format(recipe))
