@@ -14,6 +14,7 @@ import time
 from collections import OrderedDict
 from configparser import ConfigParser
 from tempfile import NamedTemporaryFile
+from threading import RLock
 
 ### PLANNED FEATURES
 
@@ -289,6 +290,8 @@ class Production:
         # Now fill them:
         for target in targets:
             self.add_target(target, [])
+        # Create lock for field access in building phase:
+        self.fields_lock = RLock()
 
     def add_target(self, target, beam):
         # Catch cyclic dependencies:
@@ -361,11 +364,13 @@ class Production:
         run_recipe(self.target_irule[target], dry_run=self.dry_run)
 
     def build_if_required(self, target):
-        if not (self.is_out_of_date(target) or self.is_missing(target)):
-            return False
+        with self.fields_lock:
+            if not (self.is_out_of_date(target) or self.is_missing(target)):
+                return False
         self.build(target)
-        self.out_of_date_targets.discard(target)
-        self.missing_targets.discard(target)
+        with self.fields_lock:
+            self.out_of_date_targets.discard(target)
+            self.missing_targets.discard(target)
         return True
 
     def produce(self, targets):
