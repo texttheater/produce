@@ -16,6 +16,8 @@ from configparser import ConfigParser
 
 ### PLANNED FEATURES
 
+# TODO %``: substitute shell output rather than value of Python expressions
+# TODO includes
 # TODO variation on the file rule type that unconditionally runs the recipe
 # but with a temp file with target, then percolates dirtiness only if the new
 # file differs from the existing version - e.g. for files that depend on data
@@ -100,7 +102,7 @@ def interpolate(string, globes, lokes, ignore_undefined=False,
         elif string.startswith('%{') and '}' in string:
             # TODO check that the part between curly braces is a valid
             # Python expression
-            # TODO Make it possible for the Python expression to contain }.
+            # FIXME Make it possible for the Python expression to contain }.
             index = string.index('}')
             expression = string[2:index]
             try:
