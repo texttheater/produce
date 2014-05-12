@@ -359,13 +359,13 @@ class Production:
         for ddep in self.target_ddeps[target]:
             self.build_if_required(ddep)
         run_recipe(self.target_irule[target], dry_run=self.dry_run)
-        self.out_of_date_targets.discard(target)
-        self.missing_targets.discard(target)
 
     def build_if_required(self, target):
         if not (self.is_out_of_date(target) or self.is_missing(target)):
             return False
         self.build(target)
+        self.out_of_date_targets.discard(target)
+        self.missing_targets.discard(target)
         return True
 
     def produce(self, targets):
