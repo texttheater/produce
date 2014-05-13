@@ -88,9 +88,9 @@ def preprocess_producefile(f):
 
 ### PATTERN MATCHING AND INTERPOLATION
 
-def interpolate(string, globes, lokes, ignore_undefined=False,
+def interpolate(string, varz, ignore_undefined=False,
         keep_escaped=False):
-    logging.debug('interpolate called with lokes: %s', lokes)
+    logging.debug('interpolate called with varz: %s', varz)
     original_string = string
     result = ''
     while string:
@@ -125,11 +125,11 @@ def interpolate(string, globes, lokes, ignore_undefined=False,
                             expression, original_string, error))
                 else:
                     raise ProduceError(
-                            'could not parse expression in pattern {}'.format(
+                            'could not parse expression in string {}'.format(
                             original_string))
             # Post-condition of above while loop: expression and index are set.
             try:
-                value = eval(expression, globes, lokes)
+                value = eval(expression, varz)
                 logging.debug('interpolating %s into %s', expression, value)
                 result += str(value)
                 string = string[index + 1:]
@@ -138,9 +138,9 @@ def interpolate(string, globes, lokes, ignore_undefined=False,
                     result += string[:index + 1]
                     string = string[index + 1:]
                 else:
-                    raise ProduceError(
-                            'undefined variable "{}" in pattern "{}"'.format(
-                            expression, original_string))
+                    raise ProduceError(('name error in expression "{}" in ' + 
+                            'string "{}": {}').format(expression,
+                            original_string, e))
         elif string.startswith('%'):
             raise ProduceError('% must be followed by % or variable name in ' +
                     'curly braces in pattern {}'.format(original_string))
@@ -159,7 +159,7 @@ def section_name_to_regex(name, globes={}):
         return produce_pattern_to_regex(name, globes)
 
 def produce_pattern_to_regex(pattern, globes={}):
-    ip = interpolate(pattern, globes, {}, ignore_undefined=True,
+    ip = interpolate(pattern, globes, ignore_undefined=True,
             keep_escaped=True)
     regex = ''
     while ip:
@@ -232,10 +232,10 @@ def create_irule(target, rules, globes):
             result = {}
             # Dictionary for local variables:
             # TODO is the empty string a good default?
-            lokes = match.groupdict(default = '')
+            varz = dict(globes, **match.groupdict(default = ''))
             # Special attribute: target
             result['target'] = target
-            lokes['target'] = target
+            varz['target'] = target
             # Process attributes and their values:
             for attribute, value in avpairs.items():
                 # Remove prefix from attribute to get local variable name:
@@ -244,11 +244,11 @@ def create_irule(target, rules, globes):
                     raise ProduceError('cannot overwrite "target" attribute ' +
                             'in rule for {}'.format(target))
                 # Do expansions in value:
-                iv = interpolate(value, globes, lokes)
+                iv = interpolate(value, varz)
                 # Attribute retains prefix:
                 result[attribute] = iv
                 # Local variable does not retain prefix:
-                lokes[loke] = iv
+                varz[loke] = iv
                 # If there is a condition and it isn't met, we stop processing
                 # attributes so they don't raise errors:
                 if attribute == 'cond' and not ast.literal_eval(iv):
@@ -256,8 +256,8 @@ def create_irule(target, rules, globes):
             # If there is a condition and it isn't met, go to the next rule:
             if 'cond' in result and not ast.literal_eval(result['cond']):
                 continue
-            logging.debug('instantiated rule for target %s has lokes: %s',
-                    target, lokes)
+            logging.debug('instantiated rule for target %s has varz: %s',
+                    target, varz)
             result['type'] = result.get('type', 'file')
             if result['type'] not in ('file', 'task'):
                 raise ProduceError('unknown type {} for target {}'.format(
@@ -417,7 +417,7 @@ if __name__ == '__main__':
         globes = OrderedDict() # "globals" is built-in
         if '%GLOBALS' in parser:
             for att, val in parser['%GLOBALS'].items():
-                globes[att] = interpolate(val, globes, {})
+                globes[att] = interpolate(val, globes)
         rules = OrderedDict()
         for section in parser:
             if section in ('%GLOBALS', '%DEFAULT'):
