@@ -375,9 +375,11 @@ class Production:
         return target in self.missing_targets
 
     def build(self, target):
+        # TODO assign each to a possibly different thread
         for ddep in self.target_ddeps[target]:
             with self.target_lock[ddep]:
                 self.build_if_required(ddep)
+        # TODO join the threads now
         run_recipe(self.target_irule[target], dry_run=self.dry_run)
 
     def build_if_required(self, target):
@@ -391,8 +393,8 @@ class Production:
         return True
 
     def produce(self, targets):
-        # TODO parallel building. Will probably have to resurrect the graph
-        # algorithm for topologically ordering targets.
+        # TODO assign each to a possibly different thread, then join the
+        # threads
         if all([not self.build_if_required(target) for target in targets]):
             logging.info('all targets are up to date')
 
