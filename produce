@@ -89,9 +89,9 @@ def preprocess_producefile(f):
 
 ### PATTERN MATCHING AND INTERPOLATION
 
-def interpolate(string, globes, lokes, ignore_undefined=False,
+def interpolate(string, varz, ignore_undefined=False,
         keep_escaped=False):
-    logging.debug('interpolate called with lokes: %s', lokes)
+    logging.debug('interpolate called with varz: %s', varz)
     original_string = string
     result = ''
     while string:
@@ -101,32 +101,47 @@ def interpolate(string, globes, lokes, ignore_undefined=False,
             else:
                 result += '%'
             string = string[2:]
-        elif string.startswith('%{') and '}' in string:
-            # TODO check that the part between curly braces is a valid
-            # Python expression
-            # FIXME Make it possible for the Python expression to contain }.
-            index = string.index('}')
-            expression = string[2:index]
-            try:
+        elif string.startswith('%{'):
+            # HACK: find the } that terminates the expansion by calling eval on
+            # possible expressions of increasing length until we find one that
+            # doesn't raise a syntax error. FIXME: things will still blow up if
+            # the Python expression contains a comment that contains a }.
+            start = 2
+            error = None
+            while '}' in string[start:]:
+                logging.debug('looking for } in %s, starting at %s', string,
+                        start)
+                index = string.index('}', start)
+                expression = string[2:index]
                 try:
-                    value = eval(expression, globes, lokes)
-                except NameError as e:
-                    raise e
-                except Exception as e:
-                    raise ProduceError(('{} evaluating expression {} in ' +
-                            'pattern {}: {}').format(e.__class__.__name__,
-                            expression, original_string, e))
+                    ast.parse(expression, mode='eval')
+                    break
+                except SyntaxError as e:
+                    error = e
+                start = index + 1
+            else:
+                if error:
+                    raise ProduceError(('{} evaluating expression "{}" in ' +
+                            'pattern "{}": {}').format(error.__class__.__name__,
+                            expression, original_string, error))
+                else:
+                    raise ProduceError(
+                            'could not parse expression in string {}'.format(
+                            original_string))
+            # Post-condition of above while loop: expression and index are set.
+            try:
+                value = eval(expression, varz)
                 logging.debug('interpolating %s into %s', expression, value)
                 result += str(value)
                 string = string[index + 1:]
-            except NameError:
+            except NameError as e:
                 if ignore_undefined:
                     result += string[:index + 1]
                     string = string[index + 1:]
                 else:
-                    raise ProduceError(
-                            'undefined variable "{}" in pattern "{}"'.format(
-                            expression, original_string))
+                    raise ProduceError(('name error in expression "{}" in ' + 
+                            'string "{}": {}').format(expression,
+                            original_string, e))
         elif string.startswith('%'):
             raise ProduceError('% must be followed by % or variable name in ' +
                     'curly braces in pattern {}'.format(original_string))
@@ -145,7 +160,7 @@ def section_name_to_regex(name, globes={}):
         return produce_pattern_to_regex(name, globes)
 
 def produce_pattern_to_regex(pattern, globes={}):
-    ip = interpolate(pattern, globes, {}, ignore_undefined=True,
+    ip = interpolate(pattern, globes, ignore_undefined=True,
             keep_escaped=True)
     regex = ''
     while ip:
@@ -218,10 +233,10 @@ def create_irule(target, rules, globes):
             result = {}
             # Dictionary for local variables:
             # TODO is the empty string a good default?
-            lokes = match.groupdict(default = '')
+            varz = dict(globes, **match.groupdict(default = ''))
             # Special attribute: target
             result['target'] = target
-            lokes['target'] = target
+            varz['target'] = target
             # Process attributes and their values:
             for attribute, value in avpairs.items():
                 # Remove prefix from attribute to get local variable name:
@@ -230,11 +245,11 @@ def create_irule(target, rules, globes):
                     raise ProduceError('cannot overwrite "target" attribute ' +
                             'in rule for {}'.format(target))
                 # Do expansions in value:
-                iv = interpolate(value, globes, lokes)
+                iv = interpolate(value, varz)
                 # Attribute retains prefix:
                 result[attribute] = iv
                 # Local variable does not retain prefix:
-                lokes[loke] = iv
+                varz[loke] = iv
                 # If there is a condition and it isn't met, we stop processing
                 # attributes so they don't raise errors:
                 if attribute == 'cond' and not ast.literal_eval(iv):
@@ -242,8 +257,8 @@ def create_irule(target, rules, globes):
             # If there is a condition and it isn't met, go to the next rule:
             if 'cond' in result and not ast.literal_eval(result['cond']):
                 continue
-            logging.debug('instantiated rule for target %s has lokes: %s',
-                    target, lokes)
+            logging.debug('instantiated rule for target %s has varz: %s',
+                    target, varz)
             result['type'] = result.get('type', 'file')
             if result['type'] not in ('file', 'task'):
                 raise ProduceError('unknown type {} for target {}'.format(
@@ -407,7 +422,7 @@ if __name__ == '__main__':
         globes = OrderedDict() # "globals" is built-in
         if '%GLOBALS' in parser:
             for att, val in parser['%GLOBALS'].items():
-                globes[att] = interpolate(val, globes, {})
+                globes[att] = interpolate(val, globes)
         rules = OrderedDict()
         for section in parser:
             if section in ('%GLOBALS', '%DEFAULT'):
