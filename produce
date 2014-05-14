@@ -389,14 +389,13 @@ class Production:
 
 ### MAIN
 
-if __name__ == '__main__':
-    args = process_commandline()
-    if args.debug:
-        level = logging.DEBUG
-    else:
-        level = logging.INFO
-    logging.basicConfig(format='%(levelname)s: %(message)s',
-            level=level)
+def produce(args):
+
+    """
+    This method provides a programmatic interface to Produce. args is a
+    dictionary with key-value pairs corresponding to the command-line options.
+    """
+
     try:
         try:
             with open(args.file) as f:
@@ -435,9 +434,19 @@ if __name__ == '__main__':
                         'produce.ini.')
         Production(targets, rules, globes, args.dry_run, args.always_build
                 ).produce(targets)
+    except KeyboardInterrupt as e:
+        raise ProduceError('Interrupted by user. Exiting.') # TODO cleanup?
+
+if __name__ == '__main__':
+    args = process_commandline()
+    if args.debug:
+        level = logging.DEBUG
+    else:
+        level = logging.INFO
+    logging.basicConfig(format='%(levelname)s: %(message)s',
+            level=level)
+    try:
+        produce(args)
     except ProduceError as e:
         logging.error(e) # TODO better formatting
         sys.exit(1)
-    except KeyboardInterrupt as e:
-        logging.error('Interrupted by user. Exiting.') # TODO cleanup?
-        sys.exit(2)
