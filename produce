@@ -113,10 +113,22 @@ def interpolate(string, varz, ignore_undefined=False,
                 index = string.index('}', start)
                 expression = string[2:index]
                 try:
-                    ast.parse(expression, mode='eval')
+                    value = eval(expression, varz)
+                    logging.debug('interpolating %s into %s', expression, value)
+                    result += str(value)
+                    string = string[index + 1:]
                     break
                 except SyntaxError as e:
                     error = e
+                except NameError as e:
+                    if ignore_undefined:
+                        result += string[:index + 1]
+                        string = string[index + 1:]
+                        break
+                    else:
+                        raise ProduceError(('name error in expression "{}" ' +
+                                'in string "{}": {}').format(expression,
+                                original_string, e))
                 start = index + 1
             else:
                 if error:
@@ -127,20 +139,6 @@ def interpolate(string, varz, ignore_undefined=False,
                     raise ProduceError(
                             'could not parse expression in string {}'.format(
                             original_string))
-            # Post-condition of above while loop: expression and index are set.
-            try:
-                value = eval(expression, varz)
-                logging.debug('interpolating %s into %s', expression, value)
-                result += str(value)
-                string = string[index + 1:]
-            except NameError as e:
-                if ignore_undefined:
-                    result += string[:index + 1]
-                    string = string[index + 1:]
-                else:
-                    raise ProduceError(('name error in expression "{}" in ' + 
-                            'string "{}": {}').format(expression,
-                            original_string, e))
         elif string.startswith('%'):
             raise ProduceError('% must be followed by % or variable name in ' +
                     'curly braces in pattern {}'.format(original_string))
