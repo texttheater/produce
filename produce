@@ -90,7 +90,8 @@ def preprocess_producefile(f):
 
 def interpolate(string, varz, ignore_undefined=False,
         keep_escaped=False):
-    logging.debug('interpolate called with varz: %s', varz)
+    logging.debug('interpolate called with varz: %s', {k: v for (k, v) in
+            varz.items() if k != '__builtins__'})
     original_string = string
     result = ''
     while string:
@@ -255,7 +256,8 @@ def create_irule(target, rules, globes):
             if 'cond' in result and not ast.literal_eval(result['cond']):
                 continue
             logging.debug('instantiated rule for target %s has varz: %s',
-                    target, varz)
+                    target, {k: v for (k, v) in varz.items() if k !=
+                    '__builtins__'})
             result['type'] = result.get('type', 'file')
             if result['type'] not in ('file', 'task'):
                 raise ProduceError('unknown type {} for target {}'.format(
@@ -411,7 +413,7 @@ def produce(args):
         parser.optionxform = lambda x: x
         # Process config file:
         parser.read_string(contents)
-        globes = OrderedDict() # "globals" is built-in
+        globes = {}
         if '%GLOBALS' in parser:
             for att, val in parser['%GLOBALS'].items():
                 globes[att] = interpolate(val, globes)
@@ -423,7 +425,7 @@ def produce(args):
             # variables?
             rules[section_name_to_regex(section, globes=globes)] = \
                     OrderedDict(parser[section])
-        # Produce:
+        # Determine targets:
         targets = args.target
         if not targets:
             if 'default' in globes:
@@ -432,6 +434,9 @@ def produce(args):
                 raise ProduceError('Don\'t know what to produce. Specify a ' +
                         'target on the command line or a default target in ' +
                         'produce.ini.')
+        # Execute prelude, with globes providing the name context:
+        exec(globes.get('prelude', ''), globes)
+        # Produce:
         Production(targets, rules, globes, args.dry_run, args.always_build
                 ).produce(targets)
     except KeyboardInterrupt as e:
