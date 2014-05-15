@@ -29,11 +29,11 @@ Usage
 
 When invoked, Produce will look for a file called produce.ini in the current
 working directory. Its format is not documented yet, but there is 
-(an example project)[https://github.com/texttheater/produce/tree/master/doc/samples/tokenization]
+[an example project]([https://github.com/texttheater/produce/tree/master/doc/samples/tokenization)
 that should be enlightening.
 
 Also have a look at the
-(PyGrunn 2014 slides)[https://texttheater.github.io/produce-pygrunn2014].
+[PyGrunn 2014 slides](https://texttheater.github.io/produce-pygrunn2014).
 
 Getting in touch
 ----------------
