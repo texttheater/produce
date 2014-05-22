@@ -71,6 +71,9 @@ def process_commandline():
             the commands that would be executed, but do not execute them""")
     parser.add_argument('-d', '--debug', action='store_true', help="""print
             debugging information""")
+    parser.add_argument('-u', '--pretend-up-to-date', metavar='FILE',
+            action='append', default=[],
+            help="""treat FILE as up-to-date and ignore its dependencies""")
     parser.add_argument('target', nargs='*', help="""the target(s) to produce
             - if omitted, default target from producefile is used""")
     return parser.parse_args()
@@ -288,12 +291,14 @@ class Production:
     state that changes during the production process.
     """
 
-    def __init__(self, targets, rules, globes, dry_run, always_build):
+    def __init__(self, targets, rules, globes, dry_run, always_build,
+                pretend_up_to_date):
         # General properties, passed as arguments to constructor:
         self.rules = rules # maps patterns to key-uninstantiated value maps ("rules")
         self.globes = globes
         self.dry_run = dry_run
         self.always_build = always_build
+        self.pretend_up_to_date = pretend_up_to_date
         # Initialize fields to store information about individual targets:
         self.targets = []
         self.target_irule = {} # maps targets to key-instantiated value maps ("instantiated rules")
@@ -316,7 +321,10 @@ class Production:
         # Make instantiated rule:
         irule = create_irule(target, self.rules, self.globes)
         # Determine dependencies and add them recursively:
-        ddeps = list_ddeps(irule)
+        if target in self.pretend_up_to_date:
+            ddeps = []
+        else:
+            ddeps = list_ddeps(irule)
         logging.debug('%s <- %s', target, ddeps)
         for ddep in ddeps:
             self.add_target(ddep, beam + [target])
@@ -348,11 +356,12 @@ class Production:
         # 4. Consider it out of date if the always_build option is True.
         if self.always_build:
             logging.debug('%s is out of date because -B', target)
-        out_of_date = target_type == 'task' \
-                or (ddeps \
-                and max([self.target_time[ddep] for ddep in ddeps]) > time) \
-                or any([self.is_out_of_date(ddep) for ddep in ddeps]) \
-                or self.always_build
+        out_of_date = \
+                target not in self.pretend_up_to_date \
+                and (target_type == 'task' \
+                     or max_ddep_time > time \
+                     or any([self.is_out_of_date(ddep) for ddep in ddeps]) \
+                     or self.always_build)
         logging.debug('%s out of date? %s', target, out_of_date)
         # Store information about this target:
         self.targets.append(target)
@@ -437,8 +446,8 @@ def produce(args):
         # Execute prelude, with globes providing the name context:
         exec(globes.get('prelude', ''), globes)
         # Produce:
-        Production(targets, rules, globes, args.dry_run, args.always_build
-                ).produce(targets)
+        Production(targets, rules, globes, args.dry_run, args.always_build,
+                args.pretend_up_to_date).produce(targets)
     except KeyboardInterrupt as e:
         raise ProduceError('Interrupted by user. Exiting.') # TODO cleanup?
 
