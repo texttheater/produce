@@ -51,6 +51,9 @@ def mtime(path, default=0):
 def now():
     return time.time()
 
+def indent(string):
+    return os.linesep.join(map(lambda x : '    ' + x, string.splitlines()))
+
 ### ERRORS
 
 class ProduceError(Exception):
@@ -207,7 +210,7 @@ def run_recipe(irule, dry_run=False):
     executable = irule.get('shell', 'bash')
     if recipe.startswith('\n'):
         recipe = recipe[1:]
-    print(recipe) # TODO add --s --silent --quiet option
+    print(indent(recipe)) # TODO add --s --silent --quiet option
     if not dry_run:
         with NamedTemporaryFile(mode='w') as recipefile:
             recipefile.write(recipe)
