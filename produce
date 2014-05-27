@@ -12,7 +12,6 @@ import sys
 import time
 
 from collections import OrderedDict
-from configparser import ConfigParser
 from tempfile import NamedTemporaryFile
 
 ### PLANNED FEATURES
@@ -82,15 +81,10 @@ def process_commandline(args=None):
 ### PRODUCEFILE PARSING
 
 SECTIONHEAD_PATTERN = re.compile(r'^\[(.*)\]\s*$')
-AVPAIR_PATTERN = re.compile(r'^(\S+?)\S*=\S*(.*)$')
-VALUECONT_PATTERN = re.compile(r'^(\s.*)$')
+AVPAIR_PATTERN = re.compile(r'^(\S+?)\s*=\s*(.*)$', re.DOTALL)
+VALUECONT_PATTERN = re.compile(r'^(\s.*)$', re.DOTALL)
+COMMENT_PATTERN = re.compile(r'^\s*#.*$')
 BLANKLINE_PATTERN = re.compile(r'^\s*$')
-
-class Section:
-
-    def __init__(self, name, avpairs):
-        self.name = name
-        self.avpairs = avpairs
 
 def preprocess_producefile(f):
     for line in f:
@@ -105,13 +99,13 @@ def parse_inifile(f):
     in_block = False
     current_name = None
     current_avpairs = None
-    def current_rule():
-        return Section(current_name, current_avpairs)
+    def current_section():
+        return current_name, [(a, v.strip()) for (a, v) in current_avpairs]
     for lineno, line in enumerate(f, start=1):
         match = SECTIONHEAD_PATTERN.match(line)
         if match:
             if in_block:
-                yield current_rule()
+                yield current_section()
             in_block = True
             current_name = match.group(1)
             current_avpairs = []
@@ -125,14 +119,36 @@ def parse_inifile(f):
                 match = VALUECONT_PATTERN.match(line)
                 if match:
                     a, v = current_avpairs.pop()
-                    current_avpairs.append((a, match.group(1)))
+                    current_avpairs.append((a, v + match.group(1)))
                     # TODO identify leading whitespace and remove it from all
                     # lines
                     continue
+        match = COMMENT_PATTERN.match(line)
+        if match:
+            continue
         match = BLANKLINE_PATTERN.match(line)
         if match:
             continue
         raise ProduceError('invalid line {} in Producefile'.format(lineno))
+    if in_block:
+        yield current_section()
+
+def interpret_sections(sections):
+    raw_globes = {}
+    rules = []
+    at_beginning = True
+    for name, avpairs in sections:
+        if at_beginning:
+            at_beginning = False
+            if name == '':
+                raw_globes = OrderedDict(avpairs)
+                continue
+        if name == '':
+            raise ProduceError('The global section (headed []) is only allowed'
+                    ' at the beginning of the Producefile.')
+        else:
+            rules.append((section_name_to_regex(name), OrderedDict(avpairs)))
+    return raw_globes, rules
 
 ### PATTERN MATCHING AND INTERPOLATION
 
@@ -272,7 +288,7 @@ def run_recipe(irule, dry_run=False):
 
 def create_irule(target, rules, globes):
     # Go through rules until a pattern matches the target:
-    for pattern, avpairs in rules.items():
+    for pattern, avdict in rules:
         match = pattern.match(target)
         if match:
             # Dictionary representing the instantiated rule:
@@ -284,7 +300,7 @@ def create_irule(target, rules, globes):
             result['target'] = target
             varz['target'] = target
             # Process attributes and their values:
-            for attribute, value in avpairs.items():
+            for attribute, value in avdict.items():
                 # Remove prefix from attribute to get local variable name:
                 loke = attribute.split('.')[-1]
                 if loke == 'target':
@@ -307,6 +323,7 @@ def create_irule(target, rules, globes):
                     target, {k: v for (k, v) in varz.items() if k !=
                     '__builtins__'})
             result['type'] = result.get('type', 'file')
+            logging.debug('target type: %s', result['type'])
             if result['type'] not in ('file', 'task'):
                 raise ProduceError('unknown type {} for target {}'.format(
                     target_type, target))
@@ -450,30 +467,14 @@ def produce(args=[]):
     try:
         try:
             with open(args.file) as f:
-               contents = ''.join(preprocess_producefile(f))
+               sections = list(parse_inifile(f))
+               logging.debug('parsed sections: %s', sections)
+               raw_globes, rules = interpret_sections(sections)
         except IOError as e:
             raise ProduceError('cannot read file {}'.format(args.file), e)
-        # produce has its own mechanism for interpolation, switch ConfigParser's
-        # off.
-        # ConfigParser does not support having no default section. >:-(
-        # Set default section name to something non-conflicting.
-        parser = ConfigParser(default_section='%DEFAULT', interpolation=None)
-        # Disable normalization, we want case-sensitive options:
-        parser.optionxform = lambda x: x
-        # Process config file:
-        parser.read_string(contents)
         globes = {}
-        if '%GLOBALS' in parser:
-            for att, val in parser['%GLOBALS'].items():
-                globes[att] = interpolate(val, globes)
-        rules = OrderedDict()
-        for section in parser:
-            if section in ('%GLOBALS', '%DEFAULT'):
-                continue
-            # TODO in patterns, should we also expand locally defined
-            # variables?
-            rules[section_name_to_regex(section, globes=globes)] = \
-                    OrderedDict(parser[section])
+        for att, val in raw_globes.items():
+            globes[att] = interpolate(val, globes)
         # Determine targets:
         targets = args.target
         if not targets:
