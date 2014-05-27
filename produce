@@ -86,11 +86,11 @@ AVPAIR_PATTERN = re.compile(r'^(\S+?)\S*=\S*(.*)$')
 VALUECONT_PATTERN = re.compile(r'^(\s.*)$')
 BLANKLINE_PATTERN = re.compile(r'^\s*$')
 
-class Rule:
+class Section:
 
-    def __init__(self, pattern, avpairs):
-        self.pattern = pattern
-        self.pattern = avpairs
+    def __init__(self, name, avpairs):
+        self.name = name
+        self.avpairs = avpairs
 
 def preprocess_producefile(f):
     for line in f:
@@ -101,19 +101,19 @@ def preprocess_producefile(f):
         else:
             yield line
 
-def parse_producefile(f):
+def parse_inifile(f):
     in_block = False
-    current_title = None
+    current_name = None
     current_avpairs = None
     def current_rule():
-        return Rule(section_head_to_regex(current_title), current_avpairs)
+        return Section(current_name, current_avpairs)
     for lineno, line in enumerate(f, start=1):
         match = SECTIONHEAD_PATTERN.match(line)
         if match:
             if in_block:
                 yield current_rule()
             in_block = True
-            current_title = match.group(1)
+            current_name = match.group(1)
             current_avpairs = []
             continue
         if in_block:
