@@ -61,7 +61,7 @@ class ProduceError(Exception):
 
 ### COMMANDLINE PROCESSING
 
-def process_commandline():
+def process_commandline(args=None):
     parser = argparse.ArgumentParser()
     parser.add_argument('-B', '--always-build', action='store_true',
             help="""unconditionally build all targets""")
@@ -73,7 +73,7 @@ def process_commandline():
             debugging information""")
     parser.add_argument('target', nargs='*', help="""the target(s) to produce
             - if omitted, default target from producefile is used""")
-    return parser.parse_args()
+    return parser.parse_args(args)
 
 ### PRODUCEFILE PARSING
 
@@ -391,13 +391,14 @@ class Production:
 
 ### MAIN
 
-def produce(args):
-
-    """
-    This method provides a programmatic interface to Produce. args is a
-    dictionary with key-value pairs corresponding to the command-line options.
-    """
-
+def produce(args=[]):
+    args = process_commandline(args)
+    if args.debug:
+        level = logging.DEBUG
+    else:
+        level = logging.INFO
+    logging.basicConfig(format='%(levelname)s: %(message)s',
+            level=level)
     try:
         try:
             with open(args.file) as f:
@@ -443,15 +444,8 @@ def produce(args):
         raise ProduceError('Interrupted by user. Exiting.') # TODO cleanup?
 
 if __name__ == '__main__':
-    args = process_commandline()
-    if args.debug:
-        level = logging.DEBUG
-    else:
-        level = logging.INFO
-    logging.basicConfig(format='%(levelname)s: %(message)s',
-            level=level)
     try:
-        produce(args)
+        produce(None)
     except ProduceError as e:
         logging.error(e) # TODO better formatting
         sys.exit(1)
