@@ -91,7 +91,8 @@ def preprocess_producefile(f):
 
 def interpolate(string, varz, ignore_undefined=False,
         keep_escaped=False):
-    logging.debug('interpolate called with varz: %s', varz)
+    logging.debug('interpolate called with varz: %s', {k: v for (k, v) in
+            varz.items() if k != '__builtins__'})
     original_string = string
     result = ''
     while string:
@@ -114,10 +115,22 @@ def interpolate(string, varz, ignore_undefined=False,
                 index = string.index('}', start)
                 expression = string[2:index]
                 try:
-                    ast.parse(expression, mode='eval')
+                    value = eval(expression, varz)
+                    logging.debug('interpolating %s into %s', expression, value)
+                    result += str(value)
+                    string = string[index + 1:]
                     break
                 except SyntaxError as e:
                     error = e
+                except NameError as e:
+                    if ignore_undefined:
+                        result += string[:index + 1]
+                        string = string[index + 1:]
+                        break
+                    else:
+                        raise ProduceError(('name error in expression "{}" ' +
+                                'in string "{}": {}').format(expression,
+                                original_string, e))
                 start = index + 1
             else:
                 if error:
@@ -128,20 +141,6 @@ def interpolate(string, varz, ignore_undefined=False,
                     raise ProduceError(
                             'could not parse expression in string {}'.format(
                             original_string))
-            # Post-condition of above while loop: expression and index are set.
-            try:
-                value = eval(expression, varz)
-                logging.debug('interpolating %s into %s', expression, value)
-                result += str(value)
-                string = string[index + 1:]
-            except NameError as e:
-                if ignore_undefined:
-                    result += string[:index + 1]
-                    string = string[index + 1:]
-                else:
-                    raise ProduceError(('name error in expression "{}" in ' + 
-                            'string "{}": {}').format(expression,
-                            original_string, e))
         elif string.startswith('%'):
             raise ProduceError('% must be followed by % or variable name in ' +
                     'curly braces in pattern {}'.format(original_string))
@@ -258,7 +257,8 @@ def create_irule(target, rules, globes):
             if 'cond' in result and not ast.literal_eval(result['cond']):
                 continue
             logging.debug('instantiated rule for target %s has varz: %s',
-                    target, varz)
+                    target, {k: v for (k, v) in varz.items() if k !=
+                    '__builtins__'})
             result['type'] = result.get('type', 'file')
             if result['type'] not in ('file', 'task'):
                 raise ProduceError('unknown type {} for target {}'.format(
@@ -400,14 +400,13 @@ class Production:
 
 ### MAIN
 
-if __name__ == '__main__':
-    args = process_commandline()
-    if args.debug:
-        level = logging.DEBUG
-    else:
-        level = logging.INFO
-    logging.basicConfig(format='%(levelname)s: %(message)s',
-            level=level)
+def produce(args):
+
+    """
+    This method provides a programmatic interface to Produce. args is a
+    dictionary with key-value pairs corresponding to the command-line options.
+    """
+
     try:
         try:
             with open(args.file) as f:
@@ -423,7 +422,7 @@ if __name__ == '__main__':
         parser.optionxform = lambda x: x
         # Process config file:
         parser.read_string(contents)
-        globes = OrderedDict() # "globals" is built-in
+        globes = {}
         if '%GLOBALS' in parser:
             for att, val in parser['%GLOBALS'].items():
                 globes[att] = interpolate(val, globes)
@@ -435,7 +434,7 @@ if __name__ == '__main__':
             # variables?
             rules[section_name_to_regex(section, globes=globes)] = \
                     OrderedDict(parser[section])
-        # Produce:
+        # Determine targets:
         targets = args.target
         if not targets:
             if 'default' in globes:
@@ -444,11 +443,24 @@ if __name__ == '__main__':
                 raise ProduceError('Don\'t know what to produce. Specify a ' +
                         'target on the command line or a default target in ' +
                         'produce.ini.')
+        # Execute prelude, with globes providing the name context:
+        exec(globes.get('prelude', ''), globes)
+        # Produce:
         Production(targets, rules, globes, args.dry_run, args.always_build
                 ).produce(targets)
+    except KeyboardInterrupt as e:
+        raise ProduceError('Interrupted by user. Exiting.') # TODO cleanup?
+
+if __name__ == '__main__':
+    args = process_commandline()
+    if args.debug:
+        level = logging.DEBUG
+    else:
+        level = logging.INFO
+    logging.basicConfig(format='%(levelname)s: %(message)s',
+            level=level)
+    try:
+        produce(args)
     except ProduceError as e:
         logging.error(e) # TODO better formatting
         sys.exit(1)
-    except KeyboardInterrupt as e:
-        logging.error('Interrupted by user. Exiting.') # TODO cleanup?
-        sys.exit(2)
