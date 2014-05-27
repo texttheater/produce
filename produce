@@ -82,7 +82,7 @@ def process_commandline(args=None):
 
 SECTIONHEAD_PATTERN = re.compile(r'^\[(.*)\]\s*$')
 AVPAIR_PATTERN = re.compile(r'^(\S+?)\s*=\s*(.*)$', re.DOTALL)
-VALUECONT_PATTERN = re.compile(r'^(\s.*)$', re.DOTALL)
+VALUECONT_PATTERN = re.compile(r'^(\s)(.*)$', re.DOTALL)
 COMMENT_PATTERN = re.compile(r'^\s*#.*$')
 BLANKLINE_PATTERN = re.compile(r'^\s*$')
 
@@ -101,6 +101,9 @@ def parse_inifile(f):
     current_avpairs = None
     def current_section():
         return current_name, [(a, v.strip()) for (a, v) in current_avpairs]
+    def extend_current_value(string):
+        a, v = current_avpairs.pop()
+        current_avpairs.append((a, v + string))
     for lineno, line in enumerate(f, start=1):
         match = SECTIONHEAD_PATTERN.match(line)
         if match:
@@ -114,20 +117,25 @@ def parse_inifile(f):
             match = AVPAIR_PATTERN.match(line)
             if match:
                 current_avpairs.append((match.group(1), match.group(2)))
+                current_valuecont_pattern = VALUECONT_PATTERN
                 continue
             if current_avpairs:
-                match = VALUECONT_PATTERN.match(line)
+                match = current_valuecont_pattern.match(line)
                 if match:
-                    a, v = current_avpairs.pop()
-                    current_avpairs.append((a, v + match.group(1)))
-                    # TODO identify leading whitespace and remove it from all
-                    # lines
+                    # Modify pattern for value continutation lines to cut off 
+                    # only as much whitespace as the first continutation line
+                    # starts with:
+                    current_valuecont_pattern = re.compile(
+                            r'^(' + match.group(1) + r')(.*)$', re.DOTALL)
+                    extend_current_value(match.group(2))
                     continue
         match = COMMENT_PATTERN.match(line)
         if match:
             continue
         match = BLANKLINE_PATTERN.match(line)
         if match:
+            if current_avpairs:
+                extend_current_value(os.linesep) 
             continue
         raise ProduceError('invalid line {} in Producefile'.format(lineno))
     if in_block:
