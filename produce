@@ -28,6 +28,7 @@ from tempfile import NamedTemporaryFile
 # TODO flat producing: run the recipe of the target, touch all existing
 # dependencies
 # TODO optionally delete intermediate files
+# TODO rename private members
 
 ### UTILITIES
 
@@ -80,6 +81,17 @@ def process_commandline(args=None):
 
 ### PRODUCEFILE PARSING
 
+SECTIONHEAD_PATTERN = re.compile(r'^\[(.*)\]\s*$')
+AVPAIR_PATTERN = re.compile(r'^(\S+?)\S*=\S*(.*)$')
+VALUECONT_PATTERN = re.compile(r'^(\s.*)$')
+BLANKLINE_PATTERN = re.compile(r'^\s*$')
+
+class Rule:
+
+    def __init__(self, pattern, avpairs):
+        self.pattern = pattern
+        self.pattern = avpairs
+
 def preprocess_producefile(f):
     for line in f:
         if line.startswith('[]'):
@@ -88,6 +100,39 @@ def preprocess_producefile(f):
             raise ProduceError('illegal section name %GLOBALS')
         else:
             yield line
+
+def parse_producefile(f):
+    in_block = False
+    current_title = None
+    current_avpairs = None
+    def current_rule():
+        return Rule(section_head_to_regex(current_title), current_avpairs)
+    for lineno, line in enumerate(f, start=1):
+        match = SECTIONHEAD_PATTERN.match(line)
+        if match:
+            if in_block:
+                yield current_rule()
+            in_block = True
+            current_title = match.group(1)
+            current_avpairs = []
+            continue
+        if in_block:
+            match = AVPAIR_PATTERN.match(line)
+            if match:
+                current_avpairs.append((match.group(1), match.group(2)))
+                continue
+            if current_avpairs:
+                match = VALUECONT_PATTERN.match(line)
+                if match:
+                    a, v = current_avpairs.pop()
+                    current_avpairs.append((a, match.group(1)))
+                    # TODO identify leading whitespace and remove it from all
+                    # lines
+                    continue
+        match = BLANKLINE_PATTERN.match(line)
+        if match:
+            continue
+        raise ProduceError('invalid line {} in Producefile'.format(lineno))
 
 ### PATTERN MATCHING AND INTERPOLATION
 
