@@ -127,7 +127,7 @@ TODO
 
 Note that, as in many INI dialects, attribute values (here: the recipe) can
 span multiple lines as long as each subsequent line is indented. See
-[Multiline attributes](#Multiline attributes) below for details.
+[Multiline attributes](#Multiline_attributes) below for details.
 
 ### Multiple wildcards, regular expressions and matching conditions 
 
@@ -144,7 +144,7 @@ TODO
 Advanced `produce.ini` features
 -------------------------------
 
-### Multiline attributes
+### <a name="Multiline_attributes">Multiline attributes</a>
 
 TODO
 
