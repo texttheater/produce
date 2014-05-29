@@ -347,7 +347,7 @@ convention according to which the task that cleans up your project directory is
 called `vacuum` because it produces a vacuum. It’s silly, I know.
 
 For other special attributes besides `task`, see [All special attributes at a
-glance](#all-special-attributes-at-a-glance)] below.
+glance](#all-special-attributes-at-a-glance) below.
 
 ### Python expressions and global variables
 
@@ -415,7 +415,7 @@ If you use Python expressions in your recipes, you will often need to import
 Python modules or define functions to use in these expressions. You can do
 this by putting the imports, function definitions and other Python code into
 the special `prelude` attribute in the
-[global section](#python-expressions-and-global-values).
+[global section](#python-expressions-and-global-variables).
 
 ### All special attributes at a glance
 
@@ -435,8 +435,7 @@ special meaning to Produce:
     resulting string must be a Python literal. If “truthy”, the rule matches
     and its expansion/execution continues. If “falsy”, the rule does not match
     the target and Produce proceeds with the next rule, trying to match the
-    target. Also see [Multiple wildcards, regular expressions and matching
-    conditions](#multiple-wildcards-regular-expressions-and-matching-conditions).</dd>
+    target. Also see <a href="#multiple-wildcards-regular-expressions-and-matching-conditions">Multiple wildcards, regular expressions and matching conditions</a>.</dd>
     <dt><code>dep.*</code></dt>
     <dd>The asterisk stands for a name chosen by you, which is the actual name
     of the variable the attribute value will be assigned to. The <code>dep.</code> prefix,
@@ -463,10 +462,10 @@ special meaning to Produce:
     command or a short shell script. Unlike Make, each line is not run in
     isolation, but the whole script is passed to the interpreter as a whole,
     after doing expansions. This way, you can e.g. define a shell variable
-    on one line and use it on the next.</dd>
+    on one line and use it on the next. Also see
+    <a href="#rules-expansions-escaping-and-comments">Rules, expansions, escaping and comments</a>.</dd>
     <dt><code>shell</code></dt>
-    <dd>See [<code>shell</code>: choosing the recipe
-    interpreter](#shell-choosing-the-recipe-interpreter)</dd>
+    <dd>See <a href="#shell-choosing-the-recipe-interpreter"><code>shell</code>: choosing the recipe interpreter</a></dd>
     <dt><code>prelude</code></dt>
     <dd>See <a href="#the-prelude">The prelude</a></dd>
 </dl>
