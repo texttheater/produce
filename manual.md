@@ -161,7 +161,44 @@ rule:
             --corrections out/$*.pos.corr > $@
 
 This could be from the Natural Language Processing project we saw as the second
-example above: 
+example above: the rule is for making the final `pos` file from the
+automatically generated `pos.auto` file and the `pos.corr` file with manual
+corrections, thus it has two direct dependencies, specified on the first line.
+The recipe refers to the first dependency using the shorthand `$<`, but there
+is no such shorthand for other dependencies. So we have to type out the second
+dependency again in the recipe, taking care to replace the wildcard `%` with
+the magic variable `$*`. This is ugly because it violates the golden principle
+“Don’t repeat yourself!” If we write something twice in a Makefile, not only is
+it more work to type, but also if we want to change it later, we have to change
+it in two places, and there’s a good chance we’ll forget that.
+
+Produce’s named dependencies avoid this problem: once specified, you can refer
+to every dependency using its name. Here is the Produce rule corresponding to
+the above Makefile rule:
+
+    [out/%{name}.pos]
+    dep.auto = %{name}.pos.auto
+    dep.corr = %{name}.pos.corr
+    recipe = ./src/scripts/apply_corrections %{auto} %{corr} > %{target}
+
+Note that you don’t _have_ to name dependencies. Sometimes you don’t need to
+refer back to them. Here is an example rule that compiles a LaTeX document:
+
+    [%{name}.pdf]
+    deps = %{name}.tex bibliography.bib
+    recipe =
+    	pdflatex %{name}
+    	bibtex %{name}
+    	pdflatex %{name}
+    	pdflatex %{name}
+
+The TeX tools are smart enough to fill in the file name extension if we just
+give them the basename that we got by matching the target. In such cases, it
+can be more convenient not to name the dependencies and list them all on one
+line. This is what the `deps` attribute is for. It is parsed using Python’s
+[`shlex.split`](https://docs.python.org/3/library/shlex.html?highlight=shlex#shlex.split)
+function – consult the Python documentation for escaping rules and such. You
+can also mix `deps.*` attributes and `deps` in one rule.
 
 Note that, as in many INI dialects, attribute values (here: the recipe) can
 span multiple lines as long as each line after the first is indented. See
