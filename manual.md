@@ -437,6 +437,19 @@ special meaning to Produce:
     the target and Produce proceeds with the next rule, trying to match the
     target. Also see [Multiple wildcards, regular expressions and matching
     conditions](#multiple-wildcards-regular-expressions-and-matching-conditions).</dd>
+    <dt>`dep.*`</dt>
+    <dd>The asterisk stands for a name chosen by you, which is the actual name
+    of the variable the attribute value will be assigned to. The `dep.` prefix,
+    not part of the variable name, tells Produce that this is a dependency,
+    i.e. that the target given by the value must be made up to date before the
+    recipe of this rule can be run. Also see
+    [Named an unnamed depenencies](#named-and-unnamed-dependencies).</dd>
+    <dt>deps</dt>
+    <dd>Like `dep.*`, but allows for specifying multiple unnamed dependencies
+    in one attribute value. The format is roughly a space-separated list. For
+    details, see
+    [`shlex.split`](https://docs.python.org/3/library/shlex.html?highlight=shlex#shlex.split).
+    Also see [Named an unnamed depenencies](#named-and-unnamed-dependencies).</dd>
     <dt>`type`</dt>
     <dd>Is either `file` (default) or `task`. If `file`, the target is supposed
     to be a file that the recipe creates/updates if it runs successfully. If
