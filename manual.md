@@ -82,6 +82,9 @@ syntax for mapping targets to dependencies. Only the core functionality of Make
 is mimicked – advanced functions of Make such as built-in rules specific to
 compiling C programs are not covered. Produce is general-purpose.
 
+Produce is written in Python 3 and scriptable in Python 3. Whenever I write
+Python below, I mean Python 3.
+
 Build automation: basic requirements
 ------------------------------------
 
@@ -94,15 +97,15 @@ Let’s review the basic functionality we expect of a build automation tool:
 * Intermediate files can be deleted without affecting up-to-dateness – if the
   outputs are newer than the inputs, the workflow will not be re-run.
 
-Make syntax vs. Produce syntax
-------------------------------
+Make syntax vs. Produce syntax and a tour of the basic features
+---------------------------------------------------------------
 
 When you run the `produce` command (usually followed by the targets you want
 built), Produce will look for a file in the current directory, called
 `produce.ini` by default. This is the “Producefile”. Let’s introduce
 Producefile syntax by comparing it to Makefile syntax.
 
-### The basics: rules, expansions and comments
+### Rules, expansions, escaping and comments
 
 Here is a Makefile for a tiny C project:
 
@@ -146,6 +149,9 @@ assigned to variable names by attribute-value pairs, as with e.g.
 `dep.c = %{name}.c`. Here, `c` is the variable name; the `dep.` prefix just
 tells Produce that this particular value is also a dependency.
 
+If you need a literal percent sign in some attribute value, you need to escape
+it as `%%`.
+
 The `target` variable is automatically available when the rule is invoked,
 containing the target matched by the target pattern.
 
@@ -155,7 +161,7 @@ So far, so good – a readable syntax, I hope, but a bit more verbose than that
 of Makefiles. What does this added verbosity buy us? We will see in the next
 subsections.
 
-### Named dependencies
+### Named and unnamed dependencies
 
 To see why naming dependencies is a good idea, consider the following Makefile
 rule:
@@ -206,7 +212,8 @@ can also mix `deps.*` attributes and `deps` in one rule.
 
 Note that, as in many INI dialects, attribute values (here: the recipe) can
 span multiple lines as long as each line after the first is indented. See
-[Multiline attributes](#multiline-attributes) below for details.
+[Whitespace and indentation in values](#whitespace-and-indentation-in-values)
+below for details.
 
 ### Multiple wildcards, regular expressions and matching conditions
 
@@ -310,41 +317,165 @@ should explain three fine points:
    on the string. So if the string contains anything other than a literal
    Python expression, this is an error.
 
-### Declarations vs. special attributes
+### Special targets vs. special attributes
 
-TODO `type`
+Besides not naming all dependencies, there is another reason why Make’s syntax
+is too simple for its own good. When some rule needs to have a special
+property, Make usually requires a “special target” that syntactically looks
+like a target but is actually a declaration and has no obvious visual
+connection to the rule(s) it applies to. We have already seen an example of the
+dreaded `.SECONDEXPANSION`. Another common special target is `.PHONY`, marking
+targets that are just jobs to be run, without producing an output file. For
+example:
 
-### Python expressions
+    .PHONY: clean
+    clean:
+    	rm *.o temp
 
-TODO
+It would be easier and more logical if the “phoniness” was declared as part of
+the rule rather than some external declaration. This is was Produce does. The
+Produce equivalent of declaring targets phony is to set the `type` attribute of
+their rule to `task` (the default is `file`). With this the rule above is
+written as follows:
 
-Advanced `produce.ini` features
--------------------------------
+    [vacuum]
+    type = task
+    recipe = rm *.o temp
 
-### Multiline attributes
+Note that since it is ungrammatical to “produce a clean”, I invented a naming
+convention according to which the task that cleans up your project directory is
+called `vacuum` because it produces a vacuum. It’s silly, I know.
 
-TODO
+For other special attributes besides `task`, see [All special attributes at a
+glance](#all-special-attributes-at-a-glance)] below.
+
+### Python expressions and global variables
+
+As we have already seen, Produce’s expansions can contain arbitrary Python
+expressions. This is not only useful for specifying Boolean matching
+conditions, but also for string manipulation, in particular for playing with
+dependencies. This is a pain in Make, because Make implements its own string
+manipulation language which from today’s perspective (since we have Python)
+not only reinvents the wheel, but reinvents it poorly, with a rather dangerous
+syntax. Consider the following (contrived) example from the GNU Make manual
+where you have a list of dependencies in a global variable and filter them to
+retain only those ending in `.c` or `.s`:
+
+    sources := foo.c bar.c baz.s ugh.h
+    foo: $(sources)
+    	cc $(filter %.c %.s,$(sources)) -o foo
+
+With Produce, we can just hand the string manipulation to Python, a language
+we already know and (hopefully) like:
+
+    []
+    sources = foo.c bar.c baz.s ugh.h
+
+    [foo]
+    deps = %{sources}
+    recipe = cc %{' '.join([f for f in sources.split() \
+    		if f.endswith('.c') or f.endswith('.s')])}
+
+This example also introduces the _global section_, a section headed by `[]`,
+thus named with the empty string. The attributes here define global variables
+accessible from all rules. The global section may only appear once and only at
+the beginning of a Producefile.
+
+Reference of advanced topics
+----------------------------
+
+### Whitespace and indentation in values
+
+An attribute value can span multiple lines as long as each line after the first
+is indented with some whitespace. The recommended indentation is either one tab
+or four spaces. If you make use of this, it is recommended to leave the first
+line (after the attribute name and the `=`) blank so all lines of the value are
+consistently aligned.
+
+The _second_ line of a value (i.e. the first indented one) determines the kind
+and amount of whitespace expected to start each subsequent line. This
+whitespace will _not_ be part of the attribute value. _Additional_ whitespace
+after the initial amount is, however, preserved. This is important e.g. for
+Python code and the reason why Produce is no longer using Python’s
+`configparser` module.
+
+All whitespace at the very beginning and at the very end of an attribute value
+will be stripped away.
 
 ### `shell`: choosing the recipe interpreter
 
-TODO
-
-### The “global” section
-
-TODO
+By default, recipes are (after doing expansions) handed to the `bash` command
+for execution. If you would rather write your recipe in `zsh`, `perl`, `python`
+or any other language, that’s no problem. Just specify the interpreter in the
+`shell` attribute of the rule.
 
 #### The prelude
 
-TODO
+If you use Python expressions in your recipes, you will often need to import
+Python modules or define functions to use in these expressions. You can do
+this by putting the imports, function definitions and other Python code into
+the special `prelude` attribute in the
+[global section](#python-expressions-and-global-values).
 
 ### All special attributes at a glance
 
-TODO
+For your reference, here are all the rule attributes that currently have a
+special meaning to Produce:
+
+<dl>
+    <dt>`target`</dt>
+    <dd>When a rule matches a target, this variable is always set to that
+    target, mainly so you can refer to it in the recipe. It is illegal to set
+    the `target` attribute yourself. Also see
+    [Rules, expansions, escaping and comments](#rules-expansions-escaping-and-comments).</dd>
+    <dt>`cond`</dt>
+    <dd>Allows to specify a _matching condition_ in addition to the target
+    pattern. Typically it is given as a single expansion with a boolean Python
+    expression. It is expanded immediately after a target matches the rule. The
+    resulting string must be a Python literal. If “truthy”, the rule matches
+    and its expansion/execution continues. If “falsy”, the rule does not match
+    the target and Produce proceeds with the next rule, trying to match the
+    target. Also see [Multiple wildcards, regular expressions and matching
+    conditions](#multiple-wildcards-regular-expressions-and-matching-conditions).</dd>
+    <dt>`type`</dt>
+    <dd>Is either `file` (default) or `task`. If `file`, the target is supposed
+    to be a file that the recipe creates/updates if it runs successfully. If
+    `task`, the target is an arbitrary name given to some task that the recipe
+    executes. Crucially, task-type targets are always assumed to be out of
+    date, regardless of the possible existence and age of a file with the same
+    name. Also see
+    [Special targets vs. special attributes](#special-targets-vs-special-attributes)</dd>
+    <dt>`recipe`</dt>
+    <dd>The command(s) to run to build the target, typically a single shell
+    command or a short shell script. Unlike Make, each line is not run in
+    isolation, but the whole script is passed to the interpreter as a whole,
+    after doing expansions. This way, you can e.g. define a shell variable
+    on one line and use it on the next.</dd>
+    <dt>`shell`</dt>
+    <dd>See [`shell`: choosing the recipe
+    interpreter](#shell-choosing-the-recipe-interpreter)</dd>
+    <dt>`prelude`</dt>
+    <dd>See [The prelude](#the-prelude)</dd>
+</dl>
 
 Running Produce
 ---------------
 
 TODO
+
+### Matching rules
+
+When producing a target, either because asked to by the user or because the
+target is required by another one, Produce will always work through the
+Producefile from top to bottom and use the first rule that matches the target.
+A rule matches a target if both the target pattern matches and the matching
+condition (if any) subsequently evaluates to true.
+
+Note that unlike most INI dialects, Produce allows for multiple sections with
+the same heading. It makes sense to have the same target pattern multiple times
+when there are matching conditions to make subdistinctions.
+
+If no rule matches a target, Produce aborts with an error message.
 
 Internals
 ---------
