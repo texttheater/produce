@@ -129,8 +129,9 @@ And here is the corresponding `produce.ini`:
 Easy enough, right? Produce syntax is a dialect of the widely known INI syntax,
 consisting of sections with headings in square brackets, followed by
 attribute-value pairs separated by `=`. In Produce’s case, sections represent
-_rules_, the section headings are _targets_ to build, and the attribute-value
-pairs specify the target’s direct dependencies and the recipe to run it.
+_rules_, the section headings are _target patterns_ matching _targets_ to
+build, and the attribute-value pairs specify the target’s direct dependencies
+and the recipe to run it.
 
 Dependencies are typically listed each as one attribute of the form `dep.name`
 where `name` stands for a name you give to the dependency – e.g., its file
@@ -302,7 +303,7 @@ should explain three fine points:
    above rule, the value of the `cond` variable is not `True` or `False`, but
    `'True'` or `'False'`. In order to interpret the value as a Boolean, Produce
    calls
-   [ast.literal\_eval](https://docs.python.org/3/library/ast.html?highlight=literal_eval#ast.literal_eval
+   [ast.literal\_eval](https://docs.python.org/3/library/ast.html?highlight=literal_eval#ast.literal_eval)
    on the string. So if the string contains anything other than a literal
    Python expression, this is an error.
 
