@@ -137,14 +137,17 @@ Dependencies are typically listed each as one attribute of the form `dep.name`
 where `name` stands for a name you give to the dependency – e.g., its file
 type. This way, you can refer to it in the recipe using an _expansion_.
 
-Expansions have the form `%{...}`. In the target, they are used as wildcards.
-When the rule is invoked on a specific target, they match any string and assign
-it to the variable name specified between the curly braces. In attribute
-values, they are used like variables, expanding to the value associated with
-the variable name. Besides target matching, values can also be assigned to
-variable names by attribute-value pairs, as with e.g. `dep.c = %{name}.c`.
-Here, `c` is the variable name; the `dep.` prefix just tells Produce that this
-particular value is also a dependency.
+Expansions have the form `%{...}`. In the target pattern, they are used as
+wildcards. When the rule is invoked on a specific target, they match any string
+and assign it to the variable name specified between the curly braces. In
+attribute values, they are used like variables, expanding to the value
+associated with the variable name. Besides target matching, values can also be
+assigned to variable names by attribute-value pairs, as with e.g.
+`dep.c = %{name}.c`. Here, `c` is the variable name; the `dep.` prefix just
+tells Produce that this particular value is also a dependency.
+
+The `target` variable is automatically available when the rule is invoked,
+containing the target matched by the target pattern.
 
 Lines starting with `#` are for comments and ignored.
 
@@ -207,7 +210,7 @@ span multiple lines as long as each line after the first is indented. See
 
 ### Multiple wildcards, regular expressions and matching conditions
 
-The ability to use more than one wildcard in matching targets is Produce’s
+The ability to use more than one wildcard in target patterns is Produce’s
 killer feature because to this date I have not been able to find a single other
 build automation tool that offers it. Rake and others do offer full regular
 expressions which are strictly more powerful but not as easy to read. Don’t
@@ -249,11 +252,11 @@ wasted getting your head around the bizarre syntax, the double dollars and the
 second expansion.
 
 A wildcard will match _anything_. If you need more control about which targets
-are matched by a Produce rule, you can use a
+are matched, you can use a
 [Python regular expression](https://docs.python.org/3/library/re.html?highlight=re#module-re)
-between slashes as the section name. For example, if we want to make sure that
-our rule only matches targets where the second part of the filename is either
-`dev` or `test`, we could do it like this:
+between slashes as the target pattern. For example, if we want to make sure
+that our rule only matches targets where the second part of the filename is
+either `dev` or `test`, we could do it like this:
 
     [/out/(?P<corpus>.*)\.(?P<portion>dev|test)\.(?P<fset>.*)\.labeled/]
     dep.model = out/%{corpus}.train.%{fset}.model
@@ -264,7 +267,7 @@ The regular expression in this rule’s header is almost precisely what the abov
 header with three wildcards is translated to by Produce internally, with the
 difference that the subexpression matching the second part is now `dev|test`
 rather than `.*`. We are using a little-known feature of regular expressions
-here, namely the `(?P<...>)` syntax that allows to assign names to
+here, namely the `(?P<...>)` syntax that allows us to assign names to
 subexpressions by which you can refer to the matched part later.
 
 Note the slashes at the beginning and end are just a signal to Produce to
@@ -272,7 +275,7 @@ interpret what is in-between as a regular expressions. You do not have to
 escape slashes within your regular expression.
 
 While regular expressions are powerful, they make your Producefile less
-readable. A better way to write the above rule is by sticking with ordinary
+readable. A better way to write the above rule is by sticking to ordinary
 wildcards and using a separate _matching condition_ to check for `dev|test`:
 
     [out/%{corpus}.%{portion}.%{fset}.labeled]
@@ -283,8 +286,8 @@ wildcards and using a separate _matching condition_ to check for `dev|test`:
 
 A matching condition is specified as the `cond` attribute. We can use any
 Python expression. It is evaluated only if the target pattern matches the
-requested target. If it evaluates to a “truey” value, the rule matches and
-the recipe is executed. If it evaluates to a “falsey” value, the rule does
+requested target. If it evaluates to a “truthy” value, the rule matches and
+the recipe is executed. If it evaluates to a “falsy” value, the rule does
 not match, and Produce moves on, trying to match the next rule in the
 Producefile.
 
