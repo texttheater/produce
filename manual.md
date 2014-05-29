@@ -12,16 +12,24 @@ intermediate files.
 The classic case for this is compiling C programs, where a simple project might
 look like this:
 
-TODO image
+![example dependency chart for compiling a C program](img/compiling.png)
 
 But build automation is also useful in other areas, such as science. For
 example, in the [Groningen Meaning Bank](http://gmb.let.rug.nl/) project, a
 Natural Language Processing pipeline is combined with corrections from human
-experts to iteratively build a collection of texts with linguistic annotations.
-Every time one of the tools in the pipeline is updated or a new human
-correction is added, parts of the pipeline need to be re-run:
+experts to build a collection of texts with linguistic annotations in a
+bootstraping fashion.
 
-TODO image
+In the following simplified setup, processing starts with a text file
+(`en.txt`) which is first part-of-speech-tagged (`en.pos`), then analyzed
+syntactically (`en.syn`) by a parser and finally analyzed semantically
+(`en.sem`). Each step is first carried out automatically by an NLP tool
+(`*.auto`) but then corrections by human annotators (`*.corr`) are applied
+to build the main version of the file which then serves as input to further
+processing. Every time a new human correction is added, parts of the
+pipeline must be re-run:
+
+![example dependency chart for running an NLP pipeline](img/pipeline.png)
 
 Or take running machine learning experiments: we have a collection of labeled
 data, split into a training portion and testing portions. We have various
@@ -30,7 +38,7 @@ separate model based on each feature set and on the training data, and generate
 corresponding labeled outputs and evaluation reports based on the development
 test data:
 
-TODO image
+![example dependency chart for running machine learning experiments](img/ml.png)
 
 A [number](http://kbroman.github.io/minimal_make/)
 [of](http://bost.ocks.org/mike/make/) [articles](http://zmjones.com/make/)
@@ -94,15 +102,29 @@ built), Produce will look for a file in the current directory, called
 `produce.ini` by default. This is the “Producefile”. Let’s introduce
 Producefile syntax by comparing it to Makefile syntax.
 
-### Rules and expansions
+### The basics: rules, expansions and comments
 
-Here is a Makefile for the tiny C project depicted above:
+Here is a Makefile for a tiny C project:
 
-TODO
+    # Compile
+    %.o : %.c
+    	cc -c $<
+    
+    # Link
+    % : %.o
+    	cc -o $@ $<
 
 And here is the corresponding `produce.ini`:
 
-TODO
+    # Compile
+    [%{name}.o]
+    dep.c = %{name}.c
+    recipe = cc -c %{c}
+    
+    # Link
+    [%{name}]
+    dep.o = %{name}.o
+    recipe = cc -o %{target} %{o}
 
 Easy enough, right? Produce syntax is a dialect of the widely known INI syntax,
 consisting of sections with headings in square brackets, followed by
@@ -123,13 +145,23 @@ variable names by attribute-value pairs, as with e.g. `dep.c = %{name}.c`.
 Here, `c` is the variable name; the `dep.` prefix just tells Produce that this
 particular value is also a dependency.
 
+Lines starting with `#` are for comments and ignored.
+
 So far, so good – a readable syntax, I hope, but a bit more verbose than that
 of Makefiles. What does this added verbosity buy us? We will see in the next
 subsections.
 
 ### Named dependencies
 
-TODO
+To see why naming dependencies is a good idea, consider the following Makefile
+rule:
+
+    out/%.pos : out/%.pos.auto out/%.pos.corr
+    	./src/scripts/apply_corrections $< \
+            --corrections out/$*.pos.corr > $@
+
+This could be from the Natural Language Processing project we saw as the second
+example above: 
 
 Note that, as in many INI dialects, attribute values (here: the recipe) can
 span multiple lines as long as each line after the first is indented. See
