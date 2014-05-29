@@ -1,5 +1,3 @@
-import os
-
 from prodtest import ProduceTestCase
 from produce import ProduceError
 
