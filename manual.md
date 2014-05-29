@@ -423,12 +423,12 @@ For your reference, here are all the rule attributes that currently have a
 special meaning to Produce:
 
 <dl>
-    <dt>`target`</dt>
+    <dt><code>target</code></dt>
     <dd>When a rule matches a target, this variable is always set to that
     target, mainly so you can refer to it in the recipe. It is illegal to set
-    the `target` attribute yourself. Also see
-    [Rules, expansions, escaping and comments](#rules-expansions-escaping-and-comments).</dd>
-    <dt>`cond`</dt>
+    the <code>target</code> attribute yourself. Also see
+    <a href="#rules-expansions-escaping-and-comments">Rules, expansions, escaping and comments</a>.</dd>
+    <dt><code>cond</code></dt>
     <dd>Allows to specify a _matching condition_ in addition to the target
     pattern. Typically it is given as a single expansion with a boolean Python
     expression. It is expanded immediately after a target matches the rule. The
@@ -437,38 +437,38 @@ special meaning to Produce:
     the target and Produce proceeds with the next rule, trying to match the
     target. Also see [Multiple wildcards, regular expressions and matching
     conditions](#multiple-wildcards-regular-expressions-and-matching-conditions).</dd>
-    <dt>`dep.*`</dt>
+    <dt><code>dep.*</code></dt>
     <dd>The asterisk stands for a name chosen by you, which is the actual name
-    of the variable the attribute value will be assigned to. The `dep.` prefix,
+    of the variable the attribute value will be assigned to. The <code>dep.</code> prefix,
     not part of the variable name, tells Produce that this is a dependency,
     i.e. that the target given by the value must be made up to date before the
     recipe of this rule can be run. Also see
-    [Named an unnamed depenencies](#named-and-unnamed-dependencies).</dd>
+    <a href="#named-and-unnamed-dependencies">Named an unnamed depenencies</a>.</dd>
     <dt>deps</dt>
-    <dd>Like `dep.*`, but allows for specifying multiple unnamed dependencies
+    <dd>Like <code>dep.*</code>, but allows for specifying multiple unnamed dependencies
     in one attribute value. The format is roughly a space-separated list. For
     details, see
-    [`shlex.split`](https://docs.python.org/3/library/shlex.html?highlight=shlex#shlex.split).
-    Also see [Named an unnamed depenencies](#named-and-unnamed-dependencies).</dd>
-    <dt>`type`</dt>
-    <dd>Is either `file` (default) or `task`. If `file`, the target is supposed
+    <a href="https://docs.python.org/3/library/shlex.html?highlight=shlex#shlex.split"><code>shlex.split</code></a>.
+    Also see <a href="#named-and-unnamed-dependencies">Named an unnamed depenencies</a>.</dd>
+    <dt><code>type</code></dt>
+    <dd>Is either <code>file</code> (default) or <code>task</code>. If <code>file</code>, the target is supposed
     to be a file that the recipe creates/updates if it runs successfully. If
-    `task`, the target is an arbitrary name given to some task that the recipe
+    <code>task</code>, the target is an arbitrary name given to some task that the recipe
     executes. Crucially, task-type targets are always assumed to be out of
     date, regardless of the possible existence and age of a file with the same
     name. Also see
-    [Special targets vs. special attributes](#special-targets-vs-special-attributes)</dd>
-    <dt>`recipe`</dt>
+    <a href="#special-targets-vs-special-attributes">Special targets vs. special attributes</a></dd>
+    <dt><code>recipe</code></dt>
     <dd>The command(s) to run to build the target, typically a single shell
     command or a short shell script. Unlike Make, each line is not run in
     isolation, but the whole script is passed to the interpreter as a whole,
     after doing expansions. This way, you can e.g. define a shell variable
     on one line and use it on the next.</dd>
-    <dt>`shell`</dt>
-    <dd>See [`shell`: choosing the recipe
+    <dt><code>shell</code></dt>
+    <dd>See [<code>shell</code>: choosing the recipe
     interpreter](#shell-choosing-the-recipe-interpreter)</dd>
-    <dt>`prelude`</dt>
-    <dd>See [The prelude](#the-prelude)</dd>
+    <dt><code>prelude</code></dt>
+    <dd>See <a href="#the-prelude">The prelude</a></dd>
 </dl>
 
 Running Produce
