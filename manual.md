@@ -32,22 +32,24 @@ test data:
 
 TODO image
 
-A number of articles (TODO links) point out that build automation is an
-invaluable help in setting up experiments in a self-documenting manner, so that
-they can still be understood, replicated and modified months or years later,
-by you, your colleagues or other researchers. Many people use Make for this
-purpose, and so did I, for a while. I specifically liked:
+A [number](http://kbroman.github.io/minimal_make/)
+[of](http://bost.ocks.org/mike/make/) [articles](http://zmjones.com/make/)
+point out that build automation is an invaluable help in setting up experiments
+in a self-documenting manner, so that they can still be understood, replicated
+and modified months or years later, by you, your colleagues or other
+researchers. Many people use Make for this purpose, and so did I, for a while.
+I specifically liked:
 
-* The declarative notation. Every step of the workflow is expressed as a rule,
-  listing the target, its direct dependencies and the command to run (the
-  “recipe”). Together with a good file naming scheme, this almost eliminates
-  the need for documentation.
-* The Unix philosophy. Make is, at its core, a thin wrapper around shell
-  scripts. Make orchestrates the steps, and shell scripts execute them, using
-  their full power. Each tool does one thing, and does it well. This reliance
-  on shell scripts is something that sets Make apart from more purpose-built
-  build tools such as Ant or A-A-P.
-* The wide availability. Make is installed by default on almost every Unix
+* *The declarative notation.* Every step of the workflow is expressed as a
+  _rule_, listing the _target_, its direct dependencies and the command to run
+  (the _recipe_). Together with a good file naming scheme, this almost
+  eliminates the need for documentation.
+* *The Unix philosophy.* Make is, at its core, a thin wrapper around shell
+  scripts. For orchestrating the steps, you use Make, and for executing them,
+  you use the full power of shell scripts. Each tool does one thing, and does
+  it well. This reliance on shell scripts is something that sets Make apart
+  from specialized build tools such as Ant or A-A-P.
+* *The wide availability.* Make is installed by default on almost every Unix
   system, making it ideal for disseminating and exchanging code because the
   Makefile format is widely known and can be run everywhere.
 
@@ -59,7 +61,7 @@ There are two reasons:
   features, things get quite arcane very quickly.
 * Wildcards are quite limited. If you want to match on the name of a specific
   target to generate its dependencies dynamically, you can only use one
-  wildcard – if your names are a bit more complex than that, you have to resort
+  wildcard. If your names are a bit more complex than that, you have to resort
   to black magic like Make’s built-in string manipulation functions that don’t
   compare favorably to languages like Python or even Perl, or rely on external
   tools. In either case, your Makefiles become extremely hard to read, bugs
@@ -68,9 +70,9 @@ There are two reasons:
 
 Produce is thus designed as a tool that copies Make’s virtues and improves a
 great deal on its deficiencies by using a still simple, but much more powerful
-syntax for mapping targets to dependencies. Only the core of Make is mimicked –
-advanced functions of Make such as built-in rules specific to compiling C
-programs are not covered. Produce is general-purpose.
+syntax for mapping targets to dependencies. Only the core functionality of Make
+is mimicked – advanced functions of Make such as built-in rules specific to
+compiling C programs are not covered. Produce is general-purpose.
 
 Build automation: basic requirements
 ------------------------------------
@@ -87,9 +89,10 @@ Let’s review the basic functionality we expect of a build automation tool:
 Make syntax vs. Produce syntax
 ------------------------------
 
-When you run the `produce` command, Produce will look for a file in the current
-directory, called `produce.ini` by default. This is the “Producefile”. Let’s
-introduce Producefile syntax by comparing it with Makefile syntax.
+When you run the `produce` command (usually followed by the targets you want
+built), Produce will look for a file in the current directory, called
+`produce.ini` by default. This is the “Producefile”. Let’s introduce
+Producefile syntax by comparing it to Makefile syntax.
 
 ### Rules and expansions
 
@@ -103,19 +106,22 @@ TODO
 
 Easy enough, right? Produce syntax is a dialect of the widely known INI syntax,
 consisting of sections with headings in square brackets, followed by
-attribute-value pairs separated by `=`. In Produce’s case, the section headings
-are targets to build, and the attribute-value pairs specify the target’s direct
-dependencies and the recipe to run it.
+attribute-value pairs separated by `=`. In Produce’s case, sections represent
+_rules_, the section headings are _targets_ to build, and the attribute-value
+pairs specify the target’s direct dependencies and the recipe to run it.
 
-Dependencies are typically listed each under one attribute of the form
-`dep.name` where `name` stands for a name you give to the dependency – e.g.,
-its file type. This way, you can refer to it in the recipe.
+Dependencies are typically listed each as one attribute of the form `dep.name`
+where `name` stands for a name you give to the dependency – e.g., its file
+type. This way, you can refer to it in the recipe using an _expansion_.
 
-Expansions have the form `%{...}`. In the target, they are used as wildcards,
-matching any string and assigning it the name specified between the curly
-braces. In attribute values, they are used like variables, expanding to the
-value associated with the name – no matter whether this name was assigned by
-matching on the target or by an attribute-value-specification.
+Expansions have the form `%{...}`. In the target, they are used as wildcards.
+When the rule is invoked on a specific target, they match any string and assign
+it to the variable name specified between the curly braces. In attribute
+values, they are used like variables, expanding to the value associated with
+the variable name. Besides target matching, values can also be assigned to
+variable names by attribute-value pairs, as with e.g. `dep.c = %{name}.c`.
+Here, `c` is the variable name; the `dep.` prefix just tells Produce that this
+particular value is also a dependency.
 
 So far, so good – a readable syntax, I hope, but a bit more verbose than that
 of Makefiles. What does this added verbosity buy us? We will see in the next
@@ -126,7 +132,7 @@ subsections.
 TODO
 
 Note that, as in many INI dialects, attribute values (here: the recipe) can
-span multiple lines as long as each subsequent line is indented. See
+span multiple lines as long as each line after the first is indented. See
 [Multiline attributes](#multiline-attributes) below for details.
 
 ### Multiple wildcards, regular expressions and matching conditions 
