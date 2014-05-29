@@ -204,9 +204,107 @@ Note that, as in many INI dialects, attribute values (here: the recipe) can
 span multiple lines as long as each line after the first is indented. See
 [Multiline attributes](#multiline-attributes) below for details.
 
-### Multiple wildcards, regular expressions and matching conditions 
+### Multiple wildcards, regular expressions and matching conditions
 
-TODO
+The ability to use more than one wildcard in matching targets is Produce’s
+killer feature because to this date I have not been able to find a single other
+build automation tool that offers it. Rake and others do offer full regular
+expressions which are strictly more powerful but not as easy to read. Don’t
+worry, Produce supports them too and more, we will come to that. But first
+consider the following Produce rule, which might stem from the third example
+project we saw in the introduction, the machine learning one:
+
+    [out/%{corpus}.%{portion}.%{fset}.labeled]
+    dep.model = out/%{corpus}.train.%{fset}.model
+    dep.input = out/%{corpus}.%{portion}.feat
+    recipe = wapiti label -m %{model} %{input} > %{target}
+
+Labeled output files here follow a certain naming convention: four parts,
+separated by periods. The first one specifies the data collection (e.g. a
+linguistic corpus), the second one the portion of the data that is
+automatically labeled in this step (either the development portion or the test
+portion), the third one specifies the feature set used and the fourth one is
+the extension `labeled`. For each of the three first parts, we use a wildcard
+to match it. We can then freely use these three wildcards to specify the
+dependencies: the model we use for labelling depends on the corpus and on the
+feature set but not on the portion to label: the portion used for training the
+model is always the training portion. The input to labelling is a file
+containing the data portion to label, together with the extracted features. We
+assume that this file always contains all features we can extract even if we’re
+not going to use them in a particular model, so this dependency does not depend
+on the feature set.
+
+A Makefile rule to achieve something similar would look something like this:
+
+    .SECONDEXPANSION:
+    out/%.labeled : out/$$(subst test,train,$$(subst dev,train,$$*)).model \
+                    out/$$(basename $$*).feat
+            wapiti label -m $< out/$(basename $*).feat > $@
+
+If you are like me, this is orders of magnitude less readable than the Produce
+version. Getting a Makefile rule like this to function properly will certainly
+make you feel smart, but hopefully also feel miserable about the brain cycles
+wasted getting your head around the bizarre syntax, the double dollars and the
+second expansion.
+
+A wildcard will match _anything_. If you need more control about which targets
+are matched by a Produce rule, you can use a
+[Python regular expression](https://docs.python.org/3/library/re.html?highlight=re#module-re)
+between slashes as the section name. For example, if we want to make sure that
+our rule only matches targets where the second part of the filename is either
+`dev` or `test`, we could do it like this:
+
+    [/out/(?P<corpus>.*)\.(?P<portion>dev|test)\.(?P<fset>.*)\.labeled/]
+    dep.model = out/%{corpus}.train.%{fset}.model
+    dep.input = out/%{corpus}.%{portion}.feat
+    recipe = wapiti label -m %{model} %{input} > %{target}
+
+The regular expression in this rule’s header is almost precisely what the above
+header with three wildcards is translated to by Produce internally, with the
+difference that the subexpression matching the second part is now `dev|test`
+rather than `.*`. We are using a little-known feature of regular expressions
+here, namely the `(?P<...>)` syntax that allows to assign names to
+subexpressions by which you can refer to the matched part later.
+
+Note the slashes at the beginning and end are just a signal to Produce to
+interpret what is in-between as a regular expressions. You do not have to
+escape slashes within your regular expression.
+
+While regular expressions are powerful, they make your Producefile less
+readable. A better way to write the above rule is by sticking with ordinary
+wildcards and using a separate _matching condition_ to check for `dev|test`:
+
+    [out/%{corpus}.%{portion}.%{fset}.labeled]
+    cond = %{portion in ('dev', 'test')}
+    dep.model = out/%{corpus}.train.%{fset}.model
+    dep.input = out/%{corpus}.%{portion}.feat
+    recipe = wapiti label -m %{model} %{input} > %{target}
+
+A matching condition is specified as the `cond` attribute. We can use any
+Python expression. It is evaluated only if the target pattern matches the
+requested target. If it evaluates to a “truey” value, the rule matches and
+the recipe is executed. If it evaluates to a “falsey” value, the rule does
+not match, and Produce moves on, trying to match the next rule in the
+Producefile.
+
+Note that the Python expression is given as an expansion. At this point we
+should explain three fine points:
+
+1. Whenever we used expansions so far, the variable names inside were actually
+   Python expressions, albeit of a simple kind: single variable names. But as
+   we see now, we can use arbitrary Python expressions. Expansions used as
+   wildcards in the target pattern are an exception, of course: they can only
+   consist of a single variable name.
+2. The variables we use in rules are actually Python variables.
+3. Attribute values are always strings, so if a Python expression is used to
+   generate (part of) an attribute value, not the value of the expression
+   itself is used but whatever its `__str__` method returns. Thus, in the
+   above rule, the value of the `cond` variable is not `True` or `False`, but
+   `'True'` or `'False'`. In order to interpret the value as a Boolean, Produce
+   calls
+   [ast.literal\_eval](https://docs.python.org/3/library/ast.html?highlight=literal_eval#ast.literal_eval
+   on the string. So if the string contains anything other than a literal
+   Python expression, this is an error.
 
 ### Declarations vs. special attributes
 
@@ -228,6 +326,10 @@ TODO
 TODO
 
 ### The “global” section
+
+TODO
+
+#### The prelude
 
 TODO
 
