@@ -7,6 +7,35 @@ code, and more towards processing data and running sets of machine learning
 experiments. Specifically, it works well with filenames that have not just one
 but many variable parts, e.g. to indicate experimental parameters.
 
+Table of contents
+-----------------
+
+- [produce](#user-content-produce)
+	- [Requirements](#user-content-requirements)
+	- [Obtaining Produce](#user-content-obtaining-produce)
+	- [Installing Produce](#user-content-installing-produce)
+	- [Usage](#user-content-usage)
+	- [Motivation](#user-content-motivation)
+	- [Build automation: basic requirements](#user-content-build-automation-basic-requirements)
+	- [Make syntax vs. Produce syntax and a tour of the basic features](#user-content-make-syntax-vs-produce-syntax-and-a-tour-of-the-basic-features)
+		- [Rules, expansions, escaping and comments](#user-content-rules-expansions-escaping-and-comments)
+		- [Named and unnamed dependencies](#user-content-named-and-unnamed-dependencies)
+		- [Multiple wildcards, regular expressions and matching conditions](#user-content-multiple-wildcards-regular-expressions-and-matching-conditions)
+		- [Special targets vs. special attributes](#user-content-special-targets-vs-special-attributes)
+		- [Python expressions and global variables](#user-content-python-expressions-and-global-variables)
+	- [Reference of advanced topics](#user-content-reference-of-advanced-topics)
+		- [Whitespace and indentation in values](#user-content-whitespace-and-indentation-in-values)
+		- [shell: choosing the recipe interpreter](#user-content-shell-choosing-the-recipe-interpreter)
+		- [The prelude](#user-content-the-prelude)
+		- [All special attributes at a glance](#user-content-all-special-attributes-at-a-glance)
+			- [In rules](#user-content-in-rules)
+			- [In the global section](#user-content-in-the-global-section)
+	- [Running Produce](#user-content-running-produce)
+		- [How targets are matched against rules](#user-content-how-targets-are-matched-against-rules)
+	- [Internals](#user-content-internals)
+		- [The build algorithm](#user-content-the-build-algorithm)
+	- [Getting in touch](#user-content-getting-in-touch)
+
 Requirements
 ------------
 
@@ -455,7 +484,7 @@ for execution. If you would rather write your recipe in `zsh`, `perl`, `python`
 or any other language, that’s no problem. Just specify the interpreter in the
 `shell` attribute of the rule.
 
-### The prelde
+### The prelude
 
 If you use Python expressions in your recipes, you will often need to import
 Python modules or define functions to use in these expressions. You can do
