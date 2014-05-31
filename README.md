@@ -573,7 +573,7 @@ Internals
 
 ### The build algorithm
 
-In [Build automation: the basic requirements](#build-automation-the-basic-requirements)
+In [Build automation: basic requirements](#build-automation-basic-requirements)
 above, I outlined what we expect from a build automation tool’s core
 functionality. There is a fairly simple algorithm that achieves this and must
 have been implemented hundreds of times, but getting it right has a few
