@@ -455,7 +455,7 @@ for execution. If you would rather write your recipe in `zsh`, `perl`, `python`
 or any other language, that’s no problem. Just specify the interpreter in the
 `shell` attribute of the rule.
 
-#### The prelude
+### The prelde
 
 If you use Python expressions in your recipes, you will often need to import
 Python modules or define functions to use in these expressions. You can do
