@@ -69,13 +69,13 @@ def process_commandline(args=None):
     parser.add_argument('-B', '--always-build', action='store_true',
             help="""unconditionally build all targets""")
     parser.add_argument('-f', '--file', default='produce.ini',
-            help="""use FILE as a producefile""")
+            help="""use FILE as a Producefile""")
     parser.add_argument('-n', '--dry-run', action='store_true', help="""print
             the commands that would be executed, but do not execute them""")
     parser.add_argument('-d', '--debug', action='store_true', help="""print
             debugging information""")
     parser.add_argument('target', nargs='*', help="""the target(s) to produce
-            - if omitted, default target from producefile is used""")
+            - if omitted, default target from Producefile is used""")
     return parser.parse_args(args)
 
 ### PRODUCEFILE PARSING
@@ -256,7 +256,7 @@ def produce_pattern_to_regex(pattern, globes={}):
 ### INSTANTIATED RULES
 
 # An instantiated rules is represented by a dict that correspond to one rule
-# section from the producefile, with the values already expanded. There are two
+# section from the Producefile, with the values already expanded. There are two
 # special keys, target (the target as matched by the section header), and type,
 # which must be one of file and task and defaults to file.
 
