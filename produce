@@ -12,7 +12,6 @@ import sys
 import time
 
 from collections import defaultdict, OrderedDict
-from configparser import ConfigParser
 from tempfile import NamedTemporaryFile
 from threading import BoundedSemaphore, RLock, Thread
 
@@ -29,6 +28,7 @@ from threading import BoundedSemaphore, RLock, Thread
 # TODO flat producing: run the recipe of the target, touch all existing
 # dependencies
 # TODO optionally delete intermediate files
+# TODO rename private members
 
 ### UTILITIES
 
@@ -52,6 +52,9 @@ def mtime(path, default=0):
 def now():
     return time.time()
 
+def indent(string):
+    return os.linesep.join(map(lambda x : '    ' + x, string.splitlines()))
+
 ### ERRORS
 
 class ProduceError(Exception):
@@ -62,12 +65,12 @@ class ProduceError(Exception):
 
 ### COMMANDLINE PROCESSING
 
-def process_commandline():
+def process_commandline(args=None):
     parser = argparse.ArgumentParser()
     parser.add_argument('-B', '--always-build', action='store_true',
             help="""unconditionally build all targets""")
     parser.add_argument('-f', '--file', default='produce.ini',
-            help="""use FILE as a producefile""")
+            help="""use FILE as a Producefile""")
     parser.add_argument('-n', '--dry-run', action='store_true', help="""print
             the commands that would be executed, but do not execute them""")
     parser.add_argument('-d', '--debug', action='store_true', help="""print
@@ -75,10 +78,16 @@ def process_commandline():
     parser.add_argument('-j', '--jobs', type=int, default=1, help="""Specifies
             the number of jobs (recipes) to run simultaneously.""")
     parser.add_argument('target', nargs='*', help="""the target(s) to produce
-            - if omitted, default target from producefile is used""")
-    return parser.parse_args()
+            - if omitted, default target from Producefile is used""")
+    return parser.parse_args(args)
 
 ### PRODUCEFILE PARSING
+
+SECTIONHEAD_PATTERN = re.compile(r'^\[(.*)\]\s*$')
+AVPAIR_PATTERN = re.compile(r'^(\S+?)\s*=\s*(.*)$', re.DOTALL)
+VALUECONT_PATTERN = re.compile(r'^(\s)(.*)$', re.DOTALL)
+COMMENT_PATTERN = re.compile(r'^\s*#.*$')
+BLANKLINE_PATTERN = re.compile(r'^\s*$')
 
 def preprocess_producefile(f):
     for line in f:
@@ -88,6 +97,69 @@ def preprocess_producefile(f):
             raise ProduceError('illegal section name %GLOBALS')
         else:
             yield line
+
+def parse_inifile(f):
+    in_block = False
+    current_name = None
+    current_avpairs = None
+    def current_section():
+        return current_name, [(a, v.strip()) for (a, v) in current_avpairs]
+    def extend_current_value(string):
+        a, v = current_avpairs.pop()
+        current_avpairs.append((a, v + string))
+    for lineno, line in enumerate(f, start=1):
+        match = SECTIONHEAD_PATTERN.match(line)
+        if match:
+            if in_block:
+                yield current_section()
+            in_block = True
+            current_name = match.group(1)
+            current_avpairs = []
+            continue
+        if in_block:
+            match = AVPAIR_PATTERN.match(line)
+            if match:
+                current_avpairs.append((match.group(1), match.group(2)))
+                current_valuecont_pattern = VALUECONT_PATTERN
+                continue
+            if current_avpairs:
+                match = current_valuecont_pattern.match(line)
+                if match:
+                    # Modify pattern for value continutation lines to cut off 
+                    # only as much whitespace as the first continutation line
+                    # starts with:
+                    current_valuecont_pattern = re.compile(
+                            r'^(' + match.group(1) + r')(.*)$', re.DOTALL)
+                    extend_current_value(match.group(2))
+                    continue
+        match = COMMENT_PATTERN.match(line)
+        if match:
+            continue
+        match = BLANKLINE_PATTERN.match(line)
+        if match:
+            if current_avpairs:
+                extend_current_value(os.linesep) 
+            continue
+        raise ProduceError('invalid line {} in Producefile'.format(lineno))
+    if in_block:
+        yield current_section()
+
+def interpret_sections(sections):
+    raw_globes = {}
+    rules = []
+    at_beginning = True
+    for name, avpairs in sections:
+        if at_beginning:
+            at_beginning = False
+            if name == '':
+                raw_globes = OrderedDict(avpairs)
+                continue
+        if name == '':
+            raise ProduceError('The global section (headed []) is only allowed'
+                    ' at the beginning of the Producefile.')
+        else:
+            rules.append((section_name_to_regex(name), OrderedDict(avpairs)))
+    return raw_globes, rules
 
 ### PATTERN MATCHING AND INTERPOLATION
 
@@ -187,7 +259,7 @@ def produce_pattern_to_regex(pattern, globes={}):
 ### INSTANTIATED RULES
 
 # An instantiated rules is represented by a dict that correspond to one rule
-# section from the producefile, with the values already expanded. There are two
+# section from the Producefile, with the values already expanded. There are two
 # special keys, target (the target as matched by the section header), and type,
 # which must be one of file and task and defaults to file.
 
@@ -210,7 +282,7 @@ def run_recipe(irule, dry_run=False):
     executable = irule.get('shell', 'bash')
     if recipe.startswith('\n'):
         recipe = recipe[1:]
-    print(recipe) # TODO add --s --silent --quiet option
+    print(indent(recipe)) # TODO add --s --silent --quiet option
     if not dry_run:
         with NamedTemporaryFile(mode='w') as recipefile:
             recipefile.write(recipe)
@@ -227,7 +299,7 @@ def run_recipe(irule, dry_run=False):
 
 def create_irule(target, rules, globes):
     # Go through rules until a pattern matches the target:
-    for pattern, avpairs in rules.items():
+    for pattern, avdict in rules:
         match = pattern.match(target)
         if match:
             # Dictionary representing the instantiated rule:
@@ -239,7 +311,7 @@ def create_irule(target, rules, globes):
             result['target'] = target
             varz['target'] = target
             # Process attributes and their values:
-            for attribute, value in avpairs.items():
+            for attribute, value in avdict.items():
                 # Remove prefix from attribute to get local variable name:
                 loke = attribute.split('.')[-1]
                 if loke == 'target':
@@ -262,6 +334,7 @@ def create_irule(target, rules, globes):
                     target, {k: v for (k, v) in varz.items() if k !=
                     '__builtins__'})
             result['type'] = result.get('type', 'file')
+            logging.debug('target type: %s', result['type'])
             if result['type'] not in ('file', 'task'):
                 raise ProduceError('unknown type {} for target {}'.format(
                     target_type, target))
@@ -424,40 +497,25 @@ class Production:
 
 ### MAIN
 
-def produce(args):
-
-    """
-    This method provides a programmatic interface to Produce. args is a
-    dictionary with key-value pairs corresponding to the command-line options.
-    """
-
+def produce(args=[]):
+    args = process_commandline(args)
+    if args.debug:
+        level = logging.DEBUG
+    else:
+        level = logging.INFO
+    logging.basicConfig(format='%(levelname)s: %(message)s',
+            level=level)
     try:
         try:
             with open(args.file) as f:
-               contents = ''.join(preprocess_producefile(f))
+               sections = list(parse_inifile(f))
+               logging.debug('parsed sections: %s', sections)
+               raw_globes, rules = interpret_sections(sections)
         except IOError as e:
             raise ProduceError('cannot read file {}'.format(args.file), e)
-        # produce has its own mechanism for interpolation, switch ConfigParser's
-        # off.
-        # ConfigParser does not support having no default section. >:-(
-        # Set default section name to something non-conflicting.
-        parser = ConfigParser(default_section='%DEFAULT', interpolation=None)
-        # Disable normalization, we want case-sensitive options:
-        parser.optionxform = lambda x: x
-        # Process config file:
-        parser.read_string(contents)
         globes = {}
-        if '%GLOBALS' in parser:
-            for att, val in parser['%GLOBALS'].items():
-                globes[att] = interpolate(val, globes)
-        rules = OrderedDict()
-        for section in parser:
-            if section in ('%GLOBALS', '%DEFAULT'):
-                continue
-            # TODO in patterns, should we also expand locally defined
-            # variables?
-            rules[section_name_to_regex(section, globes=globes)] = \
-                    OrderedDict(parser[section])
+        for att, val in raw_globes.items():
+            globes[att] = interpolate(val, globes)
         # Determine targets:
         targets = args.target
         if not targets:
@@ -476,15 +534,8 @@ def produce(args):
         raise ProduceError('Interrupted by user. Exiting.') # TODO cleanup?
 
 if __name__ == '__main__':
-    args = process_commandline()
-    if args.debug:
-        level = logging.DEBUG
-    else:
-        level = logging.INFO
-    logging.basicConfig(format='%(levelname)s: %(message)s',
-            level=level)
     try:
-        produce(args)
+        produce(None)
     except ProduceError as e:
         logging.error(e) # TODO better formatting
         sys.exit(1)
