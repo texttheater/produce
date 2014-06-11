@@ -340,7 +340,7 @@ def create_irule(target, rules, globes):
         # Although there is no rule to make the target, the target is a file
         # that exists, so we can use it as an ingredient.
         return {'target': target, 'type': 'file'}
-    raise ProduceError('no rule to produce {}.'.format(target))
+    raise ProduceError('no rule to produce {}'.format(target))
 
 def list_ddeps(irule):
     result = []
