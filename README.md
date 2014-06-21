@@ -7,34 +7,37 @@ code, and more towards processing data and running sets of machine learning
 experiments. Specifically, it works well with filenames that have not just one
 but many variable parts, e.g. to indicate experimental parameters.
 
-Table of contents
------------------
+<!-- START doctoc generated TOC please keep comment here to allow auto update -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
+**Table of Contents**  *generated with [DocToc](http://doctoc.herokuapp.com/)*
 
-- [produce](#user-content-produce)
-	- [Requirements](#user-content-requirements)
-	- [Obtaining Produce](#user-content-obtaining-produce)
-	- [Installing Produce](#user-content-installing-produce)
-	- [Usage](#user-content-usage)
-	- [Motivation](#user-content-motivation)
-	- [Build automation: basic requirements](#user-content-build-automation-basic-requirements)
-	- [Make syntax vs. Produce syntax and a tour of the basic features](#user-content-make-syntax-vs-produce-syntax-and-a-tour-of-the-basic-features)
-		- [Rules, expansions, escaping and comments](#user-content-rules-expansions-escaping-and-comments)
-		- [Named and unnamed dependencies](#user-content-named-and-unnamed-dependencies)
-		- [Multiple wildcards, regular expressions and matching conditions](#user-content-multiple-wildcards-regular-expressions-and-matching-conditions)
-		- [Special targets vs. special attributes](#user-content-special-targets-vs-special-attributes)
-		- [Python expressions and global variables](#user-content-python-expressions-and-global-variables)
-	- [Reference of advanced topics](#user-content-reference-of-advanced-topics)
-		- [Whitespace and indentation in values](#user-content-whitespace-and-indentation-in-values)
-		- [shell: choosing the recipe interpreter](#user-content-shell-choosing-the-recipe-interpreter)
-		- [The prelude](#user-content-the-prelude)
-		- [All special attributes at a glance](#user-content-all-special-attributes-at-a-glance)
-			- [In rules](#user-content-in-rules)
-			- [In the global section](#user-content-in-the-global-section)
-	- [Running Produce](#user-content-running-produce)
-		- [How targets are matched against rules](#user-content-how-targets-are-matched-against-rules)
-	- [Internals](#user-content-internals)
-		- [The build algorithm](#user-content-the-build-algorithm)
-	- [Getting in touch](#user-content-getting-in-touch)
+- [Requirements](#requirements)
+- [Obtaining Produce](#obtaining-produce)
+- [Installing Produce](#installing-produce)
+- [Usage](#usage)
+- [Motivation](#motivation)
+- [Build automation: basic requirements](#build-automation-basic-requirements)
+- [Make syntax vs. Produce syntax and a tour of the basic features](#make-syntax-vs-produce-syntax-and-a-tour-of-the-basic-features)
+  - [Rules, expansions, escaping and comments](#rules-expansions-escaping-and-comments)
+  - [Named and unnamed dependencies](#named-and-unnamed-dependencies)
+  - [Multiple wildcards, regular expressions and matching conditions](#multiple-wildcards-regular-expressions-and-matching-conditions)
+  - [Special targets vs. special attributes](#special-targets-vs-special-attributes)
+  - [Python expressions and global variables](#python-expressions-and-global-variables)
+- [Reference of advanced topics](#reference-of-advanced-topics)
+  - [Whitespace and indentation in values](#whitespace-and-indentation-in-values)
+  - [`shell`: choosing the recipe interpreter](#shell-choosing-the-recipe-interpreter)
+  - [The prelude](#the-prelude)
+  - [All special attributes at a glance](#all-special-attributes-at-a-glance)
+    - [In rules](#in-rules)
+    - [In the global section](#in-the-global-section)
+- [Running Produce](#running-produce)
+  - [When a recipe fails](#when-a-recipe-fails)
+  - [How targets are matched against rules](#how-targets-are-matched-against-rules)
+- [Internals](#internals)
+  - [The build algorithm](#the-build-algorithm)
+- [Getting in touch](#getting-in-touch)
+
+<!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
 Requirements
 ------------
