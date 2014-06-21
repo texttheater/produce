@@ -299,7 +299,7 @@ def run_recipe(irule, dry_run=False):
 
 def rename_on_error(filename):
     backup_name = filename + '~'
-    shutil.rmtree(backup_name)
+    shutil.rmtree(backup_name, ignore_errors=True)
     os.rename(filename, backup_name) # TODO error handling?
 
 def create_irule(target, rules, globes):
