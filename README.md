@@ -583,6 +583,19 @@ help message:
                             execute them
       -d, --debug           print debugging information
 
+### When a recipe fails
+
+When a recipe fails, i.e. its interpreter returns an exit status other than 0,
+the corresponding target file (if any) may already have been created or
+touched, potentially leading the next invocation of Produce to believe that it
+is up to date, even though it probably doesn’t have the correct contents. Such
+inconsistencies can lead to users tearing their hair out. In order to avoid
+this, Produce will, when a recipe fails, make sure that the target file does
+not stay there. It could just delete it, but that might be unwise because the
+user might want to inspect the output file of the erroneous recipe for
+debugging. So, Produce renames the target file by appending a `~` to the
+filename (a common naming convention for short-lived “backups”).
+
 ### How targets are matched against rules
 
 When producing a target, either because asked to by the user or because the
