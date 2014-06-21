@@ -55,6 +55,24 @@ def now():
 def indent(string):
     return os.linesep.join(map(lambda x : '    ' + x, string.splitlines()))
 
+def remove_if_exists(path):
+    try:
+        os.remove(path)
+    except OSError as e:
+        if e.errno == errno.EISDIR:
+            shutil.rmtree(path)
+        elif e.errno == errno.ENOENT:
+            pass # Mission. F***ing. Accomplished.
+        else:
+            raise e
+
+def rename_if_exists(src, dst):
+    try:
+        os.rename(src, dst)
+    except OSError as e:
+        if e.errno != errno.ENOENT:
+            raise e
+
 ### ERRORS
 
 class ProduceError(Exception):
@@ -282,25 +300,24 @@ def run_recipe(irule, dry_run=False):
         recipe = recipe[1:]
     print(indent(recipe)) # TODO add --s --silent --quiet option
     if not dry_run:
+        # Remove old backup file, if any:
+        if irule.get('type', 'file') == 'file':
+            backup_name = target + '~'
+            remove_if_exists(backup_name)
         with NamedTemporaryFile(mode='w') as recipefile:
             recipefile.write(recipe)
             recipefile.flush()
-            # FIXME using python as executable doesn't work because
-            # configparser strips all leading space. We really need to get rid
-            # of configparser.
             exit = subprocess.call([executable, recipefile.name],
                     stdin=sys.stdin)
         if exit != 0:
+            # The target may have been touched but since the recipe failed, it
+            # probably doesn't have the right content now. In order to prevent
+            # future invocations of Produce from treating it as up to date, we
+            # rename it, appending a tilde to the name:
             if irule.get('type', 'file') == 'file':
-                rename_on_error(target)
-            # TODO delete target? Good for up-to-dateness, bad for debugging.
+                rename_if_exists(target, backup_name)
             raise ProduceError('recipe failed: {}'.format(recipe))
         # TODO check here if file was created for file rules, raise exception if not?
-
-def rename_on_error(filename):
-    backup_name = filename + '~'
-    shutil.rmtree(backup_name, ignore_errors=True)
-    os.rename(filename, backup_name) # TODO error handling?
 
 def create_irule(target, rules, globes):
     # Go through rules until a pattern matches the target:
@@ -512,5 +529,5 @@ if __name__ == '__main__':
     try:
         produce(None)
     except ProduceError as e:
-        logging.error(e) # TODO better formatting
+        logging.error(e) # FIXME prints only first line of error message???
         sys.exit(1)
