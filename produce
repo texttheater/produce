@@ -384,7 +384,7 @@ def list_ddeps(irule):
 
 def read_depfile(filename):
     with open(filename) as f:
-        return map(str.strip, f)
+        return list(map(str.strip, f))
 
 ### PRODUCTION
 
@@ -425,11 +425,11 @@ class Production:
         irule = create_irule(target, self.rules, self.globes)
         # The first direct dependency is the depfile, if any:
         if 'depfile' in irule:
-            target = irule['depfile']
+            ddep = irule['depfile']
             # Add it recursively:
-            self.add_target(target, beam + [target])
+            self.add_target(ddep, beam + [target])
             # Make sure it's up to date:
-            self.build_if_required(target)
+            self.build_if_required(ddep)
         # Determine other dependencies and add them recursively:
         ddeps = list_ddeps(irule)
         logging.debug('%s <- %s', target, ddeps)
