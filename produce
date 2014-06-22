@@ -287,7 +287,7 @@ def run_recipe(irule, dry_run=False):
     if not 'recipe' in irule:
         return
     target = irule['target']
-    if irule.get('type', 'file') == 'task':
+    if irule['type'] == 'task':
         logging.info('running task %s', target)
     else:
         if os.path.exists(target):
@@ -301,7 +301,7 @@ def run_recipe(irule, dry_run=False):
     print(indent(recipe)) # TODO add --s --silent --quiet option
     if not dry_run:
         # Remove old backup file, if any:
-        if irule.get('type', 'file') == 'file':
+        if irule['type'] == 'file':
             backup_name = target + '~'
             remove_if_exists(backup_name)
         with NamedTemporaryFile(mode='w') as recipefile:
@@ -314,7 +314,7 @@ def run_recipe(irule, dry_run=False):
             # probably doesn't have the right content now. In order to prevent
             # future invocations of Produce from treating it as up to date, we
             # rename it, appending a tilde to the name:
-            if irule.get('type', 'file') == 'file':
+            if irule['type'] == 'file':
                 rename_if_exists(target, backup_name)
             raise ProduceError('recipe failed: {}'.format(recipe))
         # TODO check here if file was created for file rules, raise exception if not?
