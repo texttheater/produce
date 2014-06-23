@@ -293,6 +293,46 @@ span multiple lines as long as each line after the first is indented. See
 [Whitespace and indentation in values](#whitespace-and-indentation-in-values)
 below for details.
 
+#### Dependency files
+
+Sometimes the question which other files a file depends on is more complex and
+may change frequently over the lifetime of a project, e.g. in the cases of
+source files that import other header files, modules etc. In such cases, it
+would be nice to have the dependencies automatically listed by a script.
+Produce supports this via the `depfile` attribute in rules: here, you can
+specify the name of a _dependency file_, a text file that contains
+dependencies, one per line. Produce will read them and add them to the list of
+dependencies for the matched target. Also, Produce will try to produce the
+dependency file (i.e. make it up to date) _prior_ to reading it. So you can
+write another rule that tells Produce how to generate each dependency file, and
+the rest is automatic.
+
+For example, the following rule might be used to generate a dependency file
+listing the source file and header files required for compiling a C object.
+This example uses `.d` as the extension for dependency files. It runs `cc -MM`
+to use the C compiler’s dependency discovery feature and then some shell magic
+to convert the output from a Makefile rule into a simple dependency list:
+
+    [%{name}.d]
+    dep.c = %{name}.c
+    recipe =
+        cc -MM -I. %{name} | sed -e 's/.*: //' | sed -e 's/^ *//' | \
+        perl -pe 's/ (\\\n)?/\n/g' > %{target}
+
+The following rule could then be used to create the actual object file. The
+`depfile` attribute makes sure that whenever an included header file changes,
+the object file will be rebuilt:
+
+    [%{name}.o]
+    dep.src = %{name}.c
+    depfile = %{name}.d
+    recipe =
+        cc -c -o %{target} %{src}
+
+Note that the `.c` file will end up in the dependency list twice, once from
+`dep.src` and once from the dependency file. This does not matter, Produce is
+smart enough not to do the same thing twice.
+
 ### Multiple wildcards, regular expressions and matching conditions
 
 The ability to use more than one wildcard in target patterns is Produce’s
@@ -300,7 +340,7 @@ killer feature because to this date I have not been able to find a single other
 build automation tool that offers it. Rake and others do offer full regular
 expressions which are strictly more powerful but not as easy to read. Don’t
 worry, Produce supports them too and more, we will come to that. But first
-consider the following Produce rule, which might stem from the third example
+consider the following Produce rule, which might be found in the third example
 project we saw in the introduction, the machine learning one:
 
     [out/%{corpus}.%{portion}.%{fset}.labeled]
@@ -529,6 +569,11 @@ special meaning to Produce:
     details, see
     <a href="https://docs.python.org/3/library/shlex.html?highlight=shlex#shlex.split"><code>shlex.split</code></a>.
     Also see <a href="#named-and-unnamed-dependencies">Named an unnamed depenencies</a>.</dd>
+    <dt><code>depfile</code></dt>
+    <dd>Another way to specify (additional) dependencies: the name of a file
+    from which dependencies are read, one per line. Additionally, Produce will
+    try to make that file up to date prior to reading it. Also see
+    <a href="#dependency-files">Dependency files</a>.</dd>
     <dt><code>type</code></dt>
     <dd>Is either <code>file</code> (default) or <code>task</code>. If <code>file</code>, the target is supposed
     to be a file that the recipe creates/updates if it runs successfully. If
