@@ -378,7 +378,17 @@ def list_ddeps(irule):
             result.append(value)
         elif key == 'deps':
             result.extend(shlex.split(value))
+        elif key == 'depfile':
+            try:
+                result.extend(read_depfile(value))
+            except IOError as e:
+                raise ProduceError('cannot read depfile {} for target {}' \
+                        .format(value, irule['target']), e)
     return result
+
+def read_depfile(filename):
+    with open(filename) as f:
+        return list(map(str.strip, f))
 
 ### PRODUCTION
 
@@ -417,7 +427,14 @@ class Production:
             return
         # Make instantiated rule:
         irule = create_irule(target, self.rules, self.globes)
-        # Determine dependencies and add them recursively:
+        # The first direct dependency is the depfile, if any:
+        if 'depfile' in irule:
+            ddep = irule['depfile']
+            # Add it recursively:
+            self.add_target(ddep, beam + [target])
+            # Make sure it's up to date:
+            self.build_if_required(ddep)
+        # Determine other dependencies and add them recursively:
         ddeps = list_ddeps(irule)
         logging.debug('%s <- %s', target, ddeps)
         for ddep in ddeps:
