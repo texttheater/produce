@@ -274,7 +274,7 @@ def produce_pattern_to_regex(pattern, globes={}):
 
 ### INSTANTIATED RULES
 
-# An instantiated rules is represented by a dict that correspond to one rule
+# An instantiated rule is represented by a dict that corresponds to one rule
 # section from the Producefile, with the values already expanded. There are two
 # special keys, target (the target as matched by the section header), and type,
 # which must be one of file and task and defaults to file.
