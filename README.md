@@ -296,12 +296,13 @@ below for details.
 ### Multiple wildcards, regular expressions and matching conditions
 
 The ability to use more than one wildcard in target patterns is Produce’s
-killer feature because to this date I have not been able to find a single other
-build automation tool that offers it. Rake and others do offer full regular
-expressions which are strictly more powerful but not as easy to read. Don’t
-worry, Produce supports them too and more, we will come to that. But first
-consider the following Produce rule, which might stem from the third example
-project we saw in the introduction, the machine learning one:
+killer feature because not many other build automations tools offer it.
+The only one I know of so far is [plmake](https://github.com/cmungall/plmake).
+Rake and others do offer full regular expressions which are strictly more
+powerful but not as easy to read. Don’t worry, Produce supports them too and
+more, we will come to that. But first consider the following Produce rule,
+which might stem from the third example project we saw in the introduction,
+the machine learning one:
 
     [out/%{corpus}.%{portion}.%{fset}.labeled]
     dep.model = out/%{corpus}.train.%{fset}.model
