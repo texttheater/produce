@@ -1,4 +1,4 @@
-![Produce logo](img/logo/Produce_Logo_460.png)
+![Produce logo](img/logo/Produce_Logo_380.png)
 ==============================================
 
 Produce is an incremental build system for the command line, like Make or redo.
