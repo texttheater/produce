@@ -143,10 +143,10 @@ I specifically liked:
 So, if Make has so many advantages, why yet another build automation tool?
 There are two reasons:
 
-* Make’s syntax. Although the basic syntax is extremely simple, as soon as you
-  want to go a _little bit_ beyond what it offers and use more advanced
+* *Make’s syntax.* Although the basic syntax is extremely simple, as soon as
+  you want to go a _little bit_ beyond what it offers and use more advanced
   features, things get quite arcane very quickly.
-* Wildcards are quite limited. If you want to match on the name of a specific
+* *Wildcards are quite limited.* If you want to match on the name of a specific
   target to generate its dependencies dynamically, you can only use one
   wildcard. If your names are a bit more complex than that, you have to resort
   to black magic like Make’s built-in string manipulation functions that don’t
