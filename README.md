@@ -1,5 +1,5 @@
-produce
-=======
+![Produce logo](img/logo/Produce_Logo_300.png)
+==============================================
 
 Produce is an incremental build system for the command line, like Make or redo.
 It strives to be simple and user-friendly. It is less geared towards compiling
@@ -7,34 +7,38 @@ code, and more towards processing data and running sets of machine learning
 experiments. Specifically, it works well with filenames that have not just one
 but many variable parts, e.g. to indicate experimental parameters.
 
-Table of contents
------------------
+<!-- START doctoc generated TOC please keep comment here to allow auto update -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
+**Table of Contents**  *generated with [DocToc](http://doctoc.herokuapp.com/)*
 
-- [produce](#user-content-produce)
-	- [Requirements](#user-content-requirements)
-	- [Obtaining Produce](#user-content-obtaining-produce)
-	- [Installing Produce](#user-content-installing-produce)
-	- [Usage](#user-content-usage)
-	- [Motivation](#user-content-motivation)
-	- [Build automation: basic requirements](#user-content-build-automation-basic-requirements)
-	- [Make syntax vs. Produce syntax and a tour of the basic features](#user-content-make-syntax-vs-produce-syntax-and-a-tour-of-the-basic-features)
-		- [Rules, expansions, escaping and comments](#user-content-rules-expansions-escaping-and-comments)
-		- [Named and unnamed dependencies](#user-content-named-and-unnamed-dependencies)
-		- [Multiple wildcards, regular expressions and matching conditions](#user-content-multiple-wildcards-regular-expressions-and-matching-conditions)
-		- [Special targets vs. special attributes](#user-content-special-targets-vs-special-attributes)
-		- [Python expressions and global variables](#user-content-python-expressions-and-global-variables)
-	- [Reference of advanced topics](#user-content-reference-of-advanced-topics)
-		- [Whitespace and indentation in values](#user-content-whitespace-and-indentation-in-values)
-		- [shell: choosing the recipe interpreter](#user-content-shell-choosing-the-recipe-interpreter)
-		- [The prelude](#user-content-the-prelude)
-		- [All special attributes at a glance](#user-content-all-special-attributes-at-a-glance)
-			- [In rules](#user-content-in-rules)
-			- [In the global section](#user-content-in-the-global-section)
-	- [Running Produce](#user-content-running-produce)
-		- [How targets are matched against rules](#user-content-how-targets-are-matched-against-rules)
-	- [Internals](#user-content-internals)
-		- [The build algorithm](#user-content-the-build-algorithm)
-	- [Getting in touch](#user-content-getting-in-touch)
+- [Requirements](#requirements)
+- [Obtaining Produce](#obtaining-produce)
+- [Installing Produce](#installing-produce)
+- [Usage](#usage)
+- [Motivation](#motivation)
+- [Build automation: basic requirements](#build-automation-basic-requirements)
+- [Make syntax vs. Produce syntax and a tour of the basic features](#make-syntax-vs-produce-syntax-and-a-tour-of-the-basic-features)
+  - [Rules, expansions, escaping and comments](#rules-expansions-escaping-and-comments)
+  - [Named and unnamed dependencies](#named-and-unnamed-dependencies)
+    - [Dependency files](#dependency-files)
+  - [Multiple wildcards, regular expressions and matching conditions](#multiple-wildcards-regular-expressions-and-matching-conditions)
+  - [Special targets vs. special attributes](#special-targets-vs-special-attributes)
+  - [Python expressions and global variables](#python-expressions-and-global-variables)
+- [Reference of advanced topics](#reference-of-advanced-topics)
+  - [Whitespace and indentation in values](#whitespace-and-indentation-in-values)
+  - [`shell`: choosing the recipe interpreter](#shell-choosing-the-recipe-interpreter)
+  - [The prelude](#the-prelude)
+  - [All special attributes at a glance](#all-special-attributes-at-a-glance)
+    - [In rules](#in-rules)
+    - [In the global section](#in-the-global-section)
+- [Running Produce](#running-produce)
+  - [When a recipe fails](#when-a-recipe-fails)
+  - [How targets are matched against rules](#how-targets-are-matched-against-rules)
+- [Internals](#internals)
+  - [The build algorithm](#the-build-algorithm)
+- [Getting in touch](#getting-in-touch)
+
+<!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
 Requirements
 ------------
@@ -139,10 +143,10 @@ I specifically liked:
 So, if Make has so many advantages, why yet another build automation tool?
 There are two reasons:
 
-* Make’s syntax. Although the basic syntax is extremely simple, as soon as you
-  want to go a _little bit_ beyond what it offers and use more advanced
+* *Make’s syntax.* Although the basic syntax is extremely simple, as soon as
+  you want to go a _little bit_ beyond what it offers and use more advanced
   features, things get quite arcane very quickly.
-* Wildcards are quite limited. If you want to match on the name of a specific
+* *Wildcards are quite limited.* If you want to match on the name of a specific
   target to generate its dependencies dynamically, you can only use one
   wildcard. If your names are a bit more complex than that, you have to resort
   to black magic like Make’s built-in string manipulation functions that don’t
@@ -290,15 +294,56 @@ span multiple lines as long as each line after the first is indented. See
 [Whitespace and indentation in values](#whitespace-and-indentation-in-values)
 below for details.
 
+#### Dependency files
+
+Sometimes the question which other files a file depends on is more complex and
+may change frequently over the lifetime of a project, e.g. in the cases of
+source files that import other header files, modules etc. In such cases, it
+would be nice to have the dependencies automatically listed by a script.
+Produce supports this via the `depfile` attribute in rules: here, you can
+specify the name of a _dependency file_, a text file that contains
+dependencies, one per line. Produce will read them and add them to the list of
+dependencies for the matched target. Also, Produce will try to produce the
+dependency file (i.e. make it up to date) _prior_ to reading it. So you can
+write another rule that tells Produce how to generate each dependency file, and
+the rest is automatic.
+
+For example, the following rule might be used to generate a dependency file
+listing the source file and header files required for compiling a C object.
+This example uses `.d` as the extension for dependency files. It runs `cc -MM`
+to use the C compiler’s dependency discovery feature and then some shell magic
+to convert the output from a Makefile rule into a simple dependency list:
+
+    [%{name}.d]
+    dep.c = %{name}.c
+    recipe =
+        cc -MM -I. %{name} | sed -e 's/.*: //' | sed -e 's/^ *//' | \
+        perl -pe 's/ (\\\n)?/\n/g' > %{target}
+
+The following rule could then be used to create the actual object file. The
+`depfile` attribute makes sure that whenever an included header file changes,
+the object file will be rebuilt:
+
+    [%{name}.o]
+    dep.src = %{name}.c
+    depfile = %{name}.d
+    recipe =
+        cc -c -o %{target} %{src}
+
+Note that the `.c` file will end up in the dependency list twice, once from
+`dep.src` and once from the dependency file. This does not matter, Produce is
+smart enough not to do the same thing twice.
+
 ### Multiple wildcards, regular expressions and matching conditions
 
 The ability to use more than one wildcard in target patterns is Produce’s
-killer feature because to this date I have not been able to find a single other
-build automation tool that offers it. Rake and others do offer full regular
-expressions which are strictly more powerful but not as easy to read. Don’t
-worry, Produce supports them too and more, we will come to that. But first
-consider the following Produce rule, which might stem from the third example
-project we saw in the introduction, the machine learning one:
+killer feature because not many other build automations tools offer it.
+The only one I know of so far is [plmake](https://github.com/cmungall/plmake).
+Rake and others do offer full regular expressions which are strictly more
+powerful but not as easy to read. Don’t worry, Produce supports them too and
+more, we will come to that. But first consider the following Produce rule,
+which might stem from the third example project we saw in the introduction,
+the machine learning one:
 
     [out/%{corpus}.%{portion}.%{fset}.labeled]
     dep.model = out/%{corpus}.train.%{fset}.model
@@ -526,6 +571,11 @@ special meaning to Produce:
     details, see
     <a href="https://docs.python.org/3/library/shlex.html?highlight=shlex#shlex.split"><code>shlex.split</code></a>.
     Also see <a href="#named-and-unnamed-dependencies">Named an unnamed depenencies</a>.</dd>
+    <dt><code>depfile</code></dt>
+    <dd>Another way to specify (additional) dependencies: the name of a file
+    from which dependencies are read, one per line. Additionally, Produce will
+    try to make that file up to date prior to reading it. Also see
+    <a href="#dependency-files">Dependency files</a>.</dd>
     <dt><code>type</code></dt>
     <dd>Is either <code>file</code> (default) or <code>task</code>. If <code>file</code>, the target is supposed
     to be a file that the recipe creates/updates if it runs successfully. If
@@ -582,6 +632,19 @@ help message:
       -n, --dry-run         print the commands that would be executed, but do not
                             execute them
       -d, --debug           print debugging information
+
+### When a recipe fails
+
+When a recipe fails, i.e. its interpreter returns an exit status other than 0,
+the corresponding target file (if any) may already have been created or
+touched, potentially leading the next invocation of Produce to believe that it
+is up to date, even though it probably doesn’t have the correct contents. Such
+inconsistencies can lead to users tearing their hair out. In order to avoid
+this, Produce will, when a recipe fails, make sure that the target file does
+not stay there. It could just delete it, but that might be unwise because the
+user might want to inspect the output file of the erroneous recipe for
+debugging. So, Produce renames the target file by appending a `~` to the
+filename (a common naming convention for short-lived “backups”).
 
 ### How targets are matched against rules
 

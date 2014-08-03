@@ -7,6 +7,7 @@ import logging
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 import time
@@ -33,15 +34,19 @@ from threading import BoundedSemaphore, RLock, Thread
 ### UTILITIES
 
 def dedup(seq):
-    """Deduplicates a sequence - courtesy of
-    http://www.peterbe.com/plog/uniqifiers-benchmark"""
+    """
+    Deduplicates a sequence - courtesy of
+    http://www.peterbe.com/plog/uniqifiers-benchmark
+    """
     seen = set()
     seen_add = seen.add
     return [x for x in seq if not x in seen and not seen_add(x)]
 
 def mtime(path, default=0):
-    """Returns the mtime of the file at the specified path. Returns default if
-    file does not exist. An OSError is raised if the file cannot be stat'd."""
+    """
+    Returns the mtime of the file at the specified path. Returns default if
+    file does not exist. An OSError is raised if the file cannot be stat'd.
+    """
     try:
         return os.stat(path).st_mtime
     except OSError as e:
@@ -54,6 +59,24 @@ def now():
 
 def indent(string):
     return os.linesep.join(map(lambda x : '    ' + x, string.splitlines()))
+
+def remove_if_exists(path):
+    try:
+        os.remove(path)
+    except OSError as e:
+        if e.errno == errno.EISDIR:
+            shutil.rmtree(path)
+        elif e.errno == errno.ENOENT:
+            pass # Mission. F***ing. Accomplished.
+        else:
+            raise e
+
+def rename_if_exists(src, dst):
+    try:
+        os.rename(src, dst)
+    except OSError as e:
+        if e.errno != errno.ENOENT:
+            raise e
 
 ### ERRORS
 
@@ -258,7 +281,7 @@ def produce_pattern_to_regex(pattern, globes={}):
 
 ### INSTANTIATED RULES
 
-# An instantiated rules is represented by a dict that correspond to one rule
+# An instantiated rule is represented by a dict that corresponds to one rule
 # section from the Producefile, with the values already expanded. There are two
 # special keys, target (the target as matched by the section header), and type,
 # which must be one of file and task and defaults to file.
@@ -271,7 +294,7 @@ def run_recipe(irule, dry_run=False):
     if not 'recipe' in irule:
         return
     target = irule['target']
-    if irule.get('type', 'file') == 'task':
+    if irule['type'] == 'task':
         logging.info('running task %s', target)
     else:
         if os.path.exists(target):
@@ -284,16 +307,22 @@ def run_recipe(irule, dry_run=False):
         recipe = recipe[1:]
     print(indent(recipe)) # TODO add --s --silent --quiet option
     if not dry_run:
+        # Remove old backup file, if any:
+        if irule['type'] == 'file':
+            backup_name = target + '~'
+            remove_if_exists(backup_name)
         with NamedTemporaryFile(mode='w') as recipefile:
             recipefile.write(recipe)
             recipefile.flush()
-            # FIXME using python as executable doesn't work because
-            # configparser strips all leading space. We really need to get rid
-            # of configparser.
             exit = subprocess.call([executable, recipefile.name],
                     stdin=sys.stdin)
         if exit != 0:
-            # TODO delete target? Good for up-to-dateness, bad for debugging.
+            # The target may have been touched but since the recipe failed, it
+            # probably doesn't have the right content now. In order to prevent
+            # future invocations of Produce from treating it as up to date, we
+            # rename it, appending a tilde to the name:
+            if irule['type'] == 'file':
+                rename_if_exists(target, backup_name)
             raise ProduceError('recipe failed: {}'.format(recipe))
         # TODO check here if file was created for file rules, raise exception if not?
 
@@ -343,7 +372,7 @@ def create_irule(target, rules, globes):
         # Although there is no rule to make the target, the target is a file
         # that exists, so we can use it as an ingredient.
         return {'target': target, 'type': 'file'}
-    raise ProduceError('no rule to produce {}.'.format(target))
+    raise ProduceError('no rule to produce {}'.format(target))
 
 def list_ddeps(irule):
     result = []
@@ -352,7 +381,17 @@ def list_ddeps(irule):
             result.append(value)
         elif key == 'deps':
             result.extend(shlex.split(value))
+        elif key == 'depfile':
+            try:
+                result.extend(read_depfile(value))
+            except IOError as e:
+                raise ProduceError('cannot read depfile {} for target {}' \
+                        .format(value, irule['target']), e)
     return result
+
+def read_depfile(filename):
+    with open(filename) as f:
+        return list(map(str.strip, f))
 
 ### PRODUCTION
 
@@ -406,7 +445,14 @@ class Production:
             return
         # Make instantiated rule:
         irule = create_irule(target, self.rules, self.globes)
-        # Determine dependencies and add them recursively:
+        # The first direct dependency is the depfile, if any:
+        if 'depfile' in irule:
+            ddep = irule['depfile']
+            # Add it recursively:
+            self.add_target(ddep, beam + [target])
+            # Make sure it's up to date:
+            self.build_if_required(ddep)
+        # Determine other dependencies and add them recursively:
         ddeps = list_ddeps(irule)
         logging.debug('%s <- %s', target, ddeps)
         for ddep in ddeps:
@@ -537,5 +583,5 @@ if __name__ == '__main__':
     try:
         produce(None)
     except ProduceError as e:
-        logging.error(e) # TODO better formatting
+        logging.error(e) # FIXME prints only first line of error message???
         sys.exit(1)
