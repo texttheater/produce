@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import sys
 import time
+import traceback
 
 from collections import defaultdict, OrderedDict
 from tempfile import NamedTemporaryFile
@@ -401,10 +402,20 @@ class BuildIfRequiredThread(Thread):
         Thread.__init__(self)
         self.production = production
         self.target = target
+        self.traceback = None
 
     def run(self):
-        with self.production.target_lock[self.target]:
-            self.result = self.production.build_if_required(self.target)
+        try:
+            with self.production.target_lock[self.target]:
+                self.result = self.production.build_if_required(self.target)
+        except Exception as e:
+            self.traceback = traceback.format_exc(1000)
+
+    def get_result(self):
+        if self.traceback:
+            raise ProduceError(self.traceback)
+        return self.result
+        
 
 class Production:
 
@@ -420,6 +431,10 @@ class Production:
         self.globes = globes
         self.dry_run = dry_run
         self.always_build = always_build
+        # Create locks for the building phase:
+        self.fields_lock = RLock()
+        self.target_lock = defaultdict(RLock)
+        self.build_sema = BoundedSemaphore(jobs)
         # Initialize fields to store information about individual targets:
         self.targets = []
         self.target_irule = {} # maps targets to key-instantiated value maps ("instantiated rules")
@@ -430,10 +445,6 @@ class Production:
         # Now fill them:
         for target in targets:
             self.add_target(target, [])
-        # Create locks for the building phase:
-        self.fields_lock = RLock()
-        self.target_lock = defaultdict(RLock)
-        self.build_sema = BoundedSemaphore(jobs)
 
     def add_target(self, target, beam):
         # Catch cyclic dependencies:
@@ -516,6 +527,8 @@ class Production:
             thread.start()
         for thread in threads:
             thread.join()
+        for thread in threads:
+            thread.get_result()
         # Run recipe. Semaphore limits number of parallel recipes:
         with self.build_sema:
             run_recipe(self.target_irule[target], dry_run=self.dry_run)
@@ -538,7 +551,7 @@ class Production:
             thread.start()
         for thread in threads:
             thread.join()
-        if all([not thread.result for thread in threads]):
+        if all([not thread.get_result() for thread in threads]):
             logging.info('all targets are up to date')
 
 ### MAIN
