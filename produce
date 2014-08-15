@@ -311,15 +311,23 @@ def run_recipe(irule, dry_run=False):
         with NamedTemporaryFile(mode='w') as recipefile:
             recipefile.write(recipe)
             recipefile.flush()
-            exit = subprocess.call([executable, recipefile.name],
-                    stdin=sys.stdin)
-        if exit != 0:
+            interrupted = False
+            try:
+                exit = subprocess.call([executable, recipefile.name],
+                        stdin=sys.stdin)
+            except KeyboardInterrupt as e:
+                interrupted = True
+        if interrupted or exit != 0:
             # The target may have been touched but since the recipe failed, it
             # probably doesn't have the right content now. In order to prevent
             # future invocations of Produce from treating it as up to date, we
             # rename it, appending a tilde to the name:
             if irule['type'] == 'file':
+                logging.debug('renaming %s to %s', target, backup_name)
                 rename_if_exists(target, backup_name)
+        if interrupted:
+            raise ProduceError('interrupted while executing recipe')
+        if exit != 0:
             raise ProduceError('recipe failed: {}'.format(recipe))
         # TODO check here if file was created for file rules, raise exception if not?
 
@@ -544,7 +552,7 @@ def produce(args=[]):
         Production(targets, rules, globes, args.dry_run, args.always_build
                 ).produce(targets)
     except KeyboardInterrupt as e:
-        raise ProduceError('Interrupted by user. Exiting.') # TODO cleanup?
+        raise ProduceError('interrupted')
 
 if __name__ == '__main__':
     try:
