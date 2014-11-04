@@ -510,6 +510,8 @@ class Production:
         return target in self.missing_targets
 
     def build(self, target):
+        if target in self.pretend_up_to_date:
+            return # TODO need to raise error somewhere if target is a file and doesn't exist
         for ddep in self.target_ddeps[target]:
             self.build_if_required(ddep)
         run_recipe(self.target_irule[target], dry_run=self.dry_run)
