@@ -486,6 +486,22 @@ class Production:
                 or self.detect_changed_ddep(target, time, ddeps) \
                 or self.always_build
         logging.debug('%s out of date? %s', target, out_of_date)
+        # If we did not detect the target to be out of date but we remember it
+        # is, caused by some specific newer direct dependency, we need to
+        # rectify the situation by touching that dependency, thereby making it
+        # out of date, and detectably so by future Produce invocations. This is
+        # relevant in the second pass of adding dependencies, after the build
+        # process, when we preserve ignored out-of-date statuses. Note that
+        # touching a dependency does not risk introducing a new inconsistency
+        # because if the dependency were out of date, we would have detected
+        # this target to be out of date, too. Note also that if there is no
+        # direct newer file dependency but we still remember the target as out
+        # of date, we are guaranteed to detect this in a future invocation in
+        # some other way - either via an intermediate dependency or because
+        # there is a direct task dependency.
+        if not out_of_date and target in self.out_of_date_targets and target \
+                in self.changed_ddeps:
+            touch(self.changed_ddeps[target], now() + 1)
         # Store information about this target:
         self.targets.append(target)
         self.target_irule[target] = irule
