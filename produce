@@ -426,6 +426,7 @@ class Production:
         self.target_time = {}
         self.out_of_date_targets = set()
         self.missing_targets = set()
+        self.changed_ddeps = {} # maps a dependent to a changed direct dependency that causes it to be out of date
         # Now fill them:
         for target in targets:
             self.add_target(target, [])
@@ -481,8 +482,8 @@ class Production:
         if self.always_build:
             logging.debug('%s is out of date because -B', target)
         out_of_date = target_type == 'task' \
-                or max_ddep_time > time \
                 or any([self.is_out_of_date(ddep) for ddep in ddeps]) \
+                or self.detect_changed_ddep(target, time, ddeps) \
                 or self.always_build
         logging.debug('%s out of date? %s', target, out_of_date)
         # Store information about this target:
@@ -494,6 +495,13 @@ class Production:
             self.out_of_date_targets.add(target)
         if missing:
             self.missing_targets.add(target)
+
+    def detect_changed_ddep(self, target, time, ddeps):
+        for ddep in ddeps:
+            if self.target_time[ddep] > time:
+                self.changed_ddeps[target] = ddep
+                return True
+        return False
 
     def is_out_of_date(self, target):
         return target in self.out_of_date_targets
