@@ -74,7 +74,7 @@ class ProduceTestCase(unittest.TestCase):
         self.assertEqual(exitcode, 0)
 
     def touch(self, path):
-        os.utime(path, None)
+        self.runCommand(['touch', path])
 
     def sleep(self, seconds=1):
         """
