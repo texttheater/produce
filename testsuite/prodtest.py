@@ -76,8 +76,12 @@ class ProduceTestCase(unittest.TestCase):
     def touch(self, path):
         os.utime(path, None)
 
-    def sleep(self, seconds=2):
+    def sleep(self, seconds=1):
         """
         Wait a short while in order to make sure mtime changes.
         """
         time.sleep(seconds)
+
+    def createFile(self, name, contents):
+        with open(name, 'w', encoding='UTF-8') as f:
+            f.write(contents)
