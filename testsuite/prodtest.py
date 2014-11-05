@@ -61,6 +61,24 @@ class ProduceTestCase(unittest.TestCase):
     def assertNewerThan(self, newFile, oldFile):
         self.assertTrue(self.mtime(newFile) > self.mtime(oldFile))
 
+    def assertUpdates(self, changed, function, updated, notUpdated):
+        """
+        Touches the files in changed, runs function and asserts that doing so
+        created the files in updated or updated them, and that it did not
+        update the files in notUpdated.
+        """
+        for f in changed:
+            self.touch(f)
+        times = {}
+        for f in updated + notUpdated:
+            times[f] = self.qmtime(f)
+        self.sleep()
+        function()
+        for f in updated:
+            self.assertGreater(self.qmtime(f), times[f])
+        for f in notUpdated:
+            self.assertEqual(self.qmtime(f), times[f])
+
     def assertFileContents(self, fileName, expectedContents):
         with open(fileName) as f:
             actualContents = f.read()
@@ -68,6 +86,16 @@ class ProduceTestCase(unittest.TestCase):
 
     def mtime(self, path):
         return os.stat(path).st_mtime
+
+    def qmtime(self, path):
+        """
+        Returns the modification time of the file at path, or 0 if it doesn't
+        exist.
+        """
+        try:
+            return self.mtime(path)
+        except FileNotFoundError:
+            return 0
 
     def runCommand(self, command):
         exitcode = subprocess.call(command)
