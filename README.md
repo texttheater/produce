@@ -622,19 +622,26 @@ exist.
 A number of options can be used to control Produce’s behavior, as listed in its
 help message:
 
-    usage: produce [-h] [-B] [-f FILE] [-n] [-d] [target [target ...]]
+    usage: produce [-h] [-B] [-f FILE] [-n] [-d] [-u FILE] [target [target ...]]
     
     positional arguments:
       target                the target(s) to produce - if omitted, default target
-                            from producefile is used
+                            from Producefile is used
     
     optional arguments:
       -h, --help            show this help message and exit
       -B, --always-build    unconditionally build all targets
-      -f FILE, --file FILE  use FILE as a producefile
+      -f FILE, --file FILE  use FILE as a Producefile
       -n, --dry-run         print the commands that would be executed, but do not
                             execute them
       -d, --debug           print debugging information
+      -u FILE, --pretend-up-to-date FILE
+                            do not rebuild FILE or its dependencies (unless they
+                            are also depended on by other targets) even if out of
+                            date, but make sure that future invocations of Produce
+                            will still treat them as out of date by increasing the
+                            modification times of their changed dependencies as
+                            necessary
 
 ### When a recipe fails
 
