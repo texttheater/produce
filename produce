@@ -99,7 +99,11 @@ def process_commandline(args=None):
             debugging information""")
     parser.add_argument('-u', '--pretend-up-to-date', metavar='FILE',
             action='append', default=[],
-            help="""treat FILE as up-to-date and ignore its dependencies""")
+            help="""do not rebuild FILE or its dependencies (unless they are
+            also depended on by other targets) even if out of date, but make
+            sure that future invocations of Produce will still treat them as
+            out of date by increasing the modification times of their changed
+            dependencies as necessary""")
     parser.add_argument('target', nargs='*', help="""the target(s) to produce
             - if omitted, default target from Producefile is used""")
     return parser.parse_args(args)
