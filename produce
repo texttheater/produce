@@ -496,8 +496,7 @@ class Production:
         # of date, we are guaranteed to detect this in a future invocation in
         # some other way - either via an intermediate dependency or because
         # there is a direct task dependency.
-        if not out_of_date and target in self.out_of_date_targets and target \
-                in self.changed_ddeps:
+        if not out_of_date and target in self.changed_ddeps:
             touch(self.changed_ddeps[target], now() + 1)
         # Store information about this target:
         self.targets.append(target)
