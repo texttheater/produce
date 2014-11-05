@@ -483,7 +483,8 @@ class Production:
         if self.always_build:
             logging.debug('%s is out of date because -B', target)
         out_of_date = target_type == 'task' \
-                or any([self.is_out_of_date(ddep) for ddep in ddeps]) \
+                or any([(ddep not in self.pretend_up_to_date and \
+                self.is_out_of_date(ddep)) for ddep in ddeps]) \
                 or self.detect_changed_ddep(target, time, ddeps) \
                 or self.always_build
         logging.debug('%s out of date? %s', target, out_of_date)
