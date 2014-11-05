@@ -545,7 +545,9 @@ class Production:
             logging.info('all targets are up to date')
         # Phase 3: repeat phase 1 for the pretend targets, touching files in
         # order to preserve out-of-dateness
-        # TODO
+        self.targets = [] # circumvent add_target's deduplication
+        for target in self.pretend_up_to_date:
+            self.add_target(target, [])
 
 ### MAIN
 
