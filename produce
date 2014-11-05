@@ -427,9 +427,6 @@ class Production:
         self.out_of_date_targets = set()
         self.missing_targets = set()
         self.changed_ddeps = {} # maps a dependent to a changed direct dependency that causes it to be out of date
-        # Now fill them:
-        for target in targets:
-            self.add_target(target, [])
 
     def add_target(self, target, beam):
         # Catch cyclic dependencies:
@@ -541,10 +538,15 @@ class Production:
         return True
 
     def produce(self, targets):
-        # TODO parallel building. Will probably have to resurrect the graph
-        # algorithm for topologically ordering targets.
+        # Phase 1: build dependency graph and gather information
+        for target in targets:
+            self.add_target(target, [])
+        # Phase 2: build all we need to build
         if all([not self.build_if_required(target) for target in targets]):
             logging.info('all targets are up to date')
+        # Phase 3: repeat phase 1 for the pretend targets, touching files in
+        # order to preserve out-of-dateness
+        # TODO
 
 ### MAIN
 
