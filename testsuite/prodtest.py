@@ -67,6 +67,7 @@ class ProduceTestCase(unittest.TestCase):
         created the files in updated or updated them, and that it did not
         update the files in notUpdated.
         """
+        self.sleep()
         for f in changed:
             self.touch(f)
         times = {}
