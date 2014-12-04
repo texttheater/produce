@@ -20,7 +20,6 @@ but many variable parts, e.g. to indicate experimental parameters.
 - [Make syntax vs. Produce syntax and a tour of the basic features](#make-syntax-vs-produce-syntax-and-a-tour-of-the-basic-features)
   - [Rules, expansions, escaping and comments](#rules-expansions-escaping-and-comments)
   - [Named and unnamed dependencies](#named-and-unnamed-dependencies)
-    - [Dependency files](#dependency-files)
   - [Multiple wildcards, regular expressions and matching conditions](#multiple-wildcards-regular-expressions-and-matching-conditions)
   - [Special targets vs. special attributes](#special-targets-vs-special-attributes)
   - [Python expressions and global variables](#python-expressions-and-global-variables)
@@ -28,6 +27,7 @@ but many variable parts, e.g. to indicate experimental parameters.
   - [Whitespace and indentation in values](#whitespace-and-indentation-in-values)
   - [`shell`: choosing the recipe interpreter](#shell-choosing-the-recipe-interpreter)
   - [The prelude](#the-prelude)
+  - [Dependency files](#dependency-files)
   - [All special attributes at a glance](#all-special-attributes-at-a-glance)
     - [In rules](#in-rules)
     - [In the global section](#in-the-global-section)
@@ -294,45 +294,8 @@ span multiple lines as long as each line after the first is indented. See
 [Whitespace and indentation in values](#whitespace-and-indentation-in-values)
 below for details.
 
-#### Dependency files
-
-Sometimes the question which other files a file depends on is more complex and
-may change frequently over the lifetime of a project, e.g. in the cases of
-source files that import other header files, modules etc. In such cases, it
-would be nice to have the dependencies automatically listed by a script.
-Produce supports this via the `depfile` attribute in rules: here, you can
-specify the name of a _dependency file_, a text file that contains
-dependencies, one per line. Produce will read them and add them to the list of
-dependencies for the matched target. Also, Produce will try to produce the
-dependency file (i.e. make it up to date) _prior_ to reading it. So you can
-write another rule that tells Produce how to generate each dependency file, and
-the rest is automatic.
-
-For example, the following rule might be used to generate a dependency file
-listing the source file and header files required for compiling a C object.
-This example uses `.d` as the extension for dependency files. It runs `cc -MM`
-to use the C compiler’s dependency discovery feature and then some shell magic
-to convert the output from a Makefile rule into a simple dependency list:
-
-    [%{name}.d]
-    dep.c = %{name}.c
-    recipe =
-        cc -MM -I. %{name} | sed -e 's/.*: //' | sed -e 's/^ *//' | \
-        perl -pe 's/ (\\\n)?/\n/g' > %{target}
-
-The following rule could then be used to create the actual object file. The
-`depfile` attribute makes sure that whenever an included header file changes,
-the object file will be rebuilt:
-
-    [%{name}.o]
-    dep.src = %{name}.c
-    depfile = %{name}.d
-    recipe =
-        cc -c -o %{target} %{src}
-
-Note that the `.c` file will end up in the dependency list twice, once from
-`dep.src` and once from the dependency file. This does not matter, Produce is
-smart enough not to do the same thing twice.
+Note also that dependency lists can also be generated dynamically – see the
+section on [dependency files](#dependency-files) below.
 
 ### Multiple wildcards, regular expressions and matching conditions
 
@@ -537,6 +500,46 @@ this by putting the imports, function definitions and other Python code into
 the special `prelude` attribute in the
 [global section](#python-expressions-and-global-variables).
 
+### Dependency files
+
+Sometimes the question which other files a file depends on is more complex and
+may change frequently over the lifetime of a project, e.g. in the cases of
+source files that import other header files, modules etc. In such cases, it
+would be nice to have the dependencies automatically listed by a script.
+Produce supports this via the `depfile` attribute in rules: here, you can
+specify the name of a _dependency file_, a text file that contains
+dependencies, one per line. Produce will read them and add them to the list of
+dependencies for the matched target. Also, Produce will try to produce the
+dependency file (i.e. make it up to date) _prior_ to reading it. So you can
+write another rule that tells Produce how to generate each dependency file, and
+the rest is automatic.
+
+For example, the following rule might be used to generate a dependency file
+listing the source file and header files required for compiling a C object.
+This example uses `.d` as the extension for dependency files. It runs `cc -MM`
+to use the C compiler’s dependency discovery feature and then some shell magic
+to convert the output from a Makefile rule into a simple dependency list:
+
+    [%{name}.d]
+    dep.c = %{name}.c
+    recipe =
+        cc -MM -I. %{name} | sed -e 's/.*: //' | sed -e 's/^ *//' | \
+        perl -pe 's/ (\\\n)?/\n/g' > %{target}
+
+The following rule could then be used to create the actual object file. The
+`depfile` attribute makes sure that whenever an included header file changes,
+the object file will be rebuilt:
+
+    [%{name}.o]
+    dep.src = %{name}.c
+    depfile = %{name}.d
+    recipe =
+        cc -c -o %{target} %{src}
+
+Note that the `.c` file will end up in the dependency list twice, once from
+`dep.src` and once from the dependency file. This does not matter, Produce is
+smart enough not to do the same thing twice.
+
 ### All special attributes at a glance
 
 For your reference, here are all the rule attributes that currently have a
@@ -619,19 +622,26 @@ exist.
 A number of options can be used to control Produce’s behavior, as listed in its
 help message:
 
-    usage: produce [-h] [-B] [-f FILE] [-n] [-d] [target [target ...]]
+    usage: produce [-h] [-B] [-f FILE] [-n] [-d] [-u FILE] [target [target ...]]
     
     positional arguments:
       target                the target(s) to produce - if omitted, default target
-                            from producefile is used
+                            from Producefile is used
     
     optional arguments:
       -h, --help            show this help message and exit
       -B, --always-build    unconditionally build all targets
-      -f FILE, --file FILE  use FILE as a producefile
+      -f FILE, --file FILE  use FILE as a Producefile
       -n, --dry-run         print the commands that would be executed, but do not
                             execute them
       -d, --debug           print debugging information
+      -u FILE, --pretend-up-to-date FILE
+                            do not rebuild FILE or its dependencies (unless they
+                            are also depended on by other targets) even if out of
+                            date, but make sure that future invocations of Produce
+                            will still treat them as out of date by increasing the
+                            modification times of their changed dependencies as
+                            necessary
 
 ### When a recipe fails
 

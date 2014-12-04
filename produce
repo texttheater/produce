@@ -101,6 +101,13 @@ def process_commandline(args=None):
             debugging information""")
     parser.add_argument('-j', '--jobs', type=int, default=1, help="""Specifies
             the number of jobs (recipes) to run simultaneously.""")
+    parser.add_argument('-u', '--pretend-up-to-date', metavar='FILE',
+            action='append', default=[],
+            help="""do not rebuild FILE or its dependencies (unless they are
+            also depended on by other targets) even if out of date, but make
+            sure that future invocations of Produce will still treat them as
+            out of date by increasing the modification times of their changed
+            dependencies as necessary""")
     parser.add_argument('target', nargs='*', help="""the target(s) to produce
             - if omitted, default target from Producefile is used""")
     return parser.parse_args(args)
@@ -433,12 +440,14 @@ class Production:
     state that changes during the production process.
     """
 
-    def __init__(self, targets, rules, globes, dry_run, always_build, jobs):
+    def __init__(self, targets, rules, globes, dry_run, always_build, jobs,
+            pretend_up_to_date):
         # General properties, passed as arguments to constructor:
         self.rules = rules # maps patterns to key-uninstantiated value maps ("rules")
         self.globes = globes
         self.dry_run = dry_run
         self.always_build = always_build
+        self.pretend_up_to_date = pretend_up_to_date
         # Create locks for the building phase:
         self.fields_lock = RLock()
         self.target_lock = defaultdict(RLock)
@@ -450,9 +459,7 @@ class Production:
         self.target_time = {}
         self.out_of_date_targets = set()
         self.missing_targets = set()
-        # Now fill them:
-        for target in targets:
-            self.add_target(target, [])
+        self.changed_ddeps = {} # maps a dependent to a changed direct dependency that causes it to be out of date
 
     def add_target(self, target, beam):
         # Catch cyclic dependencies:
@@ -505,11 +512,26 @@ class Production:
         if self.always_build:
             logging.debug('%s is out of date because -B', target)
         out_of_date = target_type == 'task' \
-                or (ddeps \
-                and max([self.target_time[ddep] for ddep in ddeps]) > time) \
-                or any([self.is_out_of_date(ddep) for ddep in ddeps]) \
+                or any([(ddep not in self.pretend_up_to_date and \
+                self.is_out_of_date(ddep)) for ddep in ddeps]) \
+                or self.detect_changed_ddep(target, time, ddeps) \
                 or self.always_build
         logging.debug('%s out of date? %s', target, out_of_date)
+        # If we did not detect the target to be out of date but we remember it
+        # is, caused by some specific newer direct dependency, we need to
+        # rectify the situation by touching that dependency, thereby making it
+        # out of date, and detectably so by future Produce invocations. This is
+        # relevant in the second pass of adding dependencies, after the build
+        # process, when we preserve ignored out-of-date statuses. Note that
+        # touching a dependency does not risk introducing a new inconsistency
+        # because if the dependency were out of date, we would have detected
+        # this target to be out of date, too. Note also that if there is no
+        # direct newer file dependency but we still remember the target as out
+        # of date, we are guaranteed to detect this in a future invocation in
+        # some other way - either via an intermediate dependency or because
+        # there is a direct task dependency.
+        if not out_of_date and target in self.changed_ddeps:
+            touch(self.changed_ddeps[target], now() + 1)
         # Store information about this target:
         self.targets.append(target)
         self.target_irule[target] = irule
@@ -520,6 +542,13 @@ class Production:
         if missing:
             self.missing_targets.add(target)
 
+    def detect_changed_ddep(self, target, time, ddeps):
+        for ddep in ddeps:
+            if self.target_time[ddep] > time:
+                self.changed_ddeps[target] = ddep
+                return True
+        return False
+
     def is_out_of_date(self, target):
         return target in self.out_of_date_targets
 
@@ -527,6 +556,8 @@ class Production:
         return target in self.missing_targets
 
     def build(self, target):
+        if target in self.pretend_up_to_date:
+            return # TODO need to raise error somewhere if target is a file and doesn't exist
         # Build required dependencies in parallel:
         threads = []
         for ddep in self.target_ddeps[target]:
@@ -552,6 +583,10 @@ class Production:
         return True
 
     def produce(self, targets):
+        # Phase 1: build dependency graph and gather information
+        for target in targets:
+            self.add_target(target, [])
+        # Phase 2: build all we need to build
         threads = []
         for target in targets:
             threads.append(BuildIfRequiredThread(self, target))
@@ -561,6 +596,11 @@ class Production:
             thread.join()
         if all([not thread.get_result() for thread in threads]):
             logging.info('all targets are up to date')
+        # Phase 3: repeat phase 1 for the pretend targets, touching files in
+        # order to preserve out-of-dateness
+        self.targets = [] # circumvent add_target's deduplication
+        for target in self.pretend_up_to_date:
+            self.add_target(target, [])
 
 ### MAIN
 
@@ -596,7 +636,7 @@ def produce(args=[]):
         exec(globes.get('prelude', ''), globes)
         # Produce:
         Production(targets, rules, globes, args.dry_run, args.always_build,
-                args.jobs).produce(targets)
+                args.jobs, args.pretend_up_to_date).produce(targets)
     except KeyboardInterrupt as e:
         raise ProduceError('interrupted')
 
