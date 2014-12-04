@@ -430,7 +430,6 @@ class BuildIfRequiredThread(Thread):
         if self.traceback:
             raise ProduceError(self.traceback)
         return self.result
-        
 
 class Production:
 
@@ -451,6 +450,7 @@ class Production:
         # Create locks for the building phase:
         self.fields_lock = RLock()
         self.target_lock = defaultdict(RLock)
+        logging.debug('using up to %s threads', jobs)
         self.build_sema = BoundedSemaphore(jobs)
         # Initialize fields to store information about individual targets:
         self.targets = []
@@ -477,7 +477,7 @@ class Production:
             # Add it recursively:
             self.add_target(ddep, beam + [target])
             # Make sure it's up to date:
-            self.build_if_required(ddep)
+            self.build_if_required(ddep) # TODO do this asynchronously like for normal targets
         # Determine other dependencies and add them recursively:
         ddeps = list_ddeps(irule)
         logging.debug('%s <- %s', target, ddeps)
@@ -567,7 +567,7 @@ class Production:
         for thread in threads:
             thread.join()
         for thread in threads:
-            thread.get_result()
+            thread.get_result() # in order to propagate any exceptions
         # Run recipe. Semaphore limits number of parallel recipes:
         with self.build_sema:
             run_recipe(self.target_irule[target], dry_run=self.dry_run)
