@@ -120,15 +120,6 @@ VALUECONT_PATTERN = re.compile(r'^(\s)(.*)$', re.DOTALL)
 COMMENT_PATTERN = re.compile(r'^\s*#.*$')
 BLANKLINE_PATTERN = re.compile(r'^\s*$')
 
-def preprocess_producefile(f):
-    for line in f:
-        if line.startswith('[]'):
-            yield '[%GLOBALS]' + line[2:]
-        elif line.startswith('[%GLOBALS]'):
-            raise ProduceError('illegal section name %GLOBALS')
-        else:
-            yield line
-
 def parse_inifile(f):
     in_block = False
     current_name = None
