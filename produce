@@ -138,6 +138,9 @@ def parse_inifile(f):
             current_name = match.group(1)
             current_avpairs = []
             continue
+        match = COMMENT_PATTERN.match(line)
+        if match:
+            continue
         if in_block:
             match = AVPAIR_PATTERN.match(line)
             if match:
@@ -154,9 +157,6 @@ def parse_inifile(f):
                             r'^(' + match.group(1) + r')(.*)$', re.DOTALL)
                     extend_current_value(match.group(2))
                     continue
-        match = COMMENT_PATTERN.match(line)
-        if match:
-            continue
         match = BLANKLINE_PATTERN.match(line)
         if match:
             if current_avpairs:
