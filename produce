@@ -370,6 +370,7 @@ def create_irule(target, rules, globes):
                     break
             # If there is a condition and it isn't met, go to the next rule:
             if 'cond' in result and not ast.literal_eval(result['cond']):
+                logging.debug('condition %s failed, trying next rule', result['cond'])
                 continue
             logging.debug('instantiated rule for target %s has varz: %s',
                     target, {k: v for (k, v) in varz.items() if k !=
@@ -380,6 +381,8 @@ def create_irule(target, rules, globes):
                 raise ProduceError('unknown type {} for target {}'.format(
                     target_type, target))
             return result
+        else:
+            logging.debug('pattern %s did not match, trying next rule', pattern)
     if os.path.exists(target):
         # Although there is no rule to make the target, the target is a file
         # that exists, so we can use it as an ingredient.
