@@ -11,9 +11,11 @@ import shutil
 import subprocess
 import sys
 import time
+import traceback
 
-from collections import OrderedDict
+from collections import defaultdict, OrderedDict
 from tempfile import NamedTemporaryFile
+from threading import BoundedSemaphore, RLock, Thread
 
 ### PLANNED FEATURES
 
@@ -97,6 +99,8 @@ def process_commandline(args=None):
             the commands that would be executed, but do not execute them""")
     parser.add_argument('-d', '--debug', action='store_true', help="""print
             debugging information""")
+    parser.add_argument('-j', '--jobs', type=int, default=1, help="""Specifies
+            the number of jobs (recipes) to run simultaneously.""")
     parser.add_argument('-u', '--pretend-up-to-date', metavar='FILE',
             action='append', default=[],
             help="""do not rebuild FILE or its dependencies (unless they are
@@ -116,15 +120,6 @@ VALUECONT_PATTERN = re.compile(r'^(\s)(.*)$', re.DOTALL)
 COMMENT_PATTERN = re.compile(r'^\s*#.*$')
 BLANKLINE_PATTERN = re.compile(r'^\s*$')
 
-def preprocess_producefile(f):
-    for line in f:
-        if line.startswith('[]'):
-            yield '[%GLOBALS]' + line[2:]
-        elif line.startswith('[%GLOBALS]'):
-            raise ProduceError('illegal section name %GLOBALS')
-        else:
-            yield line
-
 def parse_inifile(f):
     in_block = False
     current_name = None
@@ -143,6 +138,9 @@ def parse_inifile(f):
             current_name = match.group(1)
             current_avpairs = []
             continue
+        match = COMMENT_PATTERN.match(line)
+        if match:
+            continue
         if in_block:
             match = AVPAIR_PATTERN.match(line)
             if match:
@@ -159,9 +157,6 @@ def parse_inifile(f):
                             r'^(' + match.group(1) + r')(.*)$', re.DOTALL)
                     extend_current_value(match.group(2))
                     continue
-        match = COMMENT_PATTERN.match(line)
-        if match:
-            continue
         match = BLANKLINE_PATTERN.match(line)
         if match:
             if current_avpairs:
@@ -410,6 +405,26 @@ def read_depfile(filename):
 
 ### PRODUCTION
 
+class BuildIfRequiredThread(Thread):
+
+    def __init__(self, production, target):
+        Thread.__init__(self)
+        self.production = production
+        self.target = target
+        self.traceback = None
+
+    def run(self):
+        try:
+            with self.production.target_lock[self.target]:
+                self.result = self.production.build_if_required(self.target)
+        except Exception as e:
+            self.traceback = traceback.format_exc(1000)
+
+    def get_result(self):
+        if self.traceback:
+            raise ProduceError(self.traceback)
+        return self.result
+
 class Production:
 
     """
@@ -418,14 +433,19 @@ class Production:
     state that changes during the production process.
     """
 
-    def __init__(self, targets, rules, globes, dry_run, always_build,
-                pretend_up_to_date):
+    def __init__(self, targets, rules, globes, dry_run, always_build, jobs,
+            pretend_up_to_date):
         # General properties, passed as arguments to constructor:
         self.rules = rules # maps patterns to key-uninstantiated value maps ("rules")
         self.globes = globes
         self.dry_run = dry_run
         self.always_build = always_build
         self.pretend_up_to_date = pretend_up_to_date
+        # Create locks for the building phase:
+        self.fields_lock = RLock()
+        self.target_lock = defaultdict(RLock)
+        logging.debug('using up to %s threads', jobs)
+        self.build_sema = BoundedSemaphore(jobs)
         # Initialize fields to store information about individual targets:
         self.targets = []
         self.target_irule = {} # maps targets to key-instantiated value maps ("instantiated rules")
@@ -451,7 +471,7 @@ class Production:
             # Add it recursively:
             self.add_target(ddep, beam + [target])
             # Make sure it's up to date:
-            self.build_if_required(ddep)
+            self.build_if_required(ddep) # TODO do this asynchronously like for normal targets
         # Determine other dependencies and add them recursively:
         ddeps = list_ddeps(irule)
         logging.debug('%s <- %s', target, ddeps)
@@ -532,16 +552,28 @@ class Production:
     def build(self, target):
         if target in self.pretend_up_to_date:
             return # TODO need to raise error somewhere if target is a file and doesn't exist
+        # Build required dependencies in parallel:
+        threads = []
         for ddep in self.target_ddeps[target]:
-            self.build_if_required(ddep)
-        run_recipe(self.target_irule[target], dry_run=self.dry_run)
-        self.out_of_date_targets.discard(target)
-        self.missing_targets.discard(target)
+            threads.append(BuildIfRequiredThread(self, ddep))
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        for thread in threads:
+            thread.get_result() # in order to propagate any exceptions
+        # Run recipe. Semaphore limits number of parallel recipes:
+        with self.build_sema:
+            run_recipe(self.target_irule[target], dry_run=self.dry_run)
 
     def build_if_required(self, target):
-        if not (self.is_out_of_date(target) or self.is_missing(target)):
-            return False
+        with self.fields_lock:
+            if not (self.is_out_of_date(target) or self.is_missing(target)):
+                return False
         self.build(target)
+        with self.fields_lock:
+            self.out_of_date_targets.discard(target)
+            self.missing_targets.discard(target)
         return True
 
     def produce(self, targets):
@@ -549,7 +581,14 @@ class Production:
         for target in targets:
             self.add_target(target, [])
         # Phase 2: build all we need to build
-        if all([not self.build_if_required(target) for target in targets]):
+        threads = []
+        for target in targets:
+            threads.append(BuildIfRequiredThread(self, target))
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        if all([not thread.get_result() for thread in threads]):
             logging.info('all targets are up to date')
         # Phase 3: repeat phase 1 for the pretend targets, touching files in
         # order to preserve out-of-dateness
@@ -591,7 +630,7 @@ def produce(args=[]):
         exec(globes.get('prelude', ''), globes)
         # Produce:
         Production(targets, rules, globes, args.dry_run, args.always_build,
-                args.pretend_up_to_date).produce(targets)
+                args.jobs, args.pretend_up_to_date).produce(targets)
     except KeyboardInterrupt as e:
         raise ProduceError('interrupted')
 

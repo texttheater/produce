@@ -622,7 +622,8 @@ exist.
 A number of options can be used to control Produce’s behavior, as listed in its
 help message:
 
-    usage: produce [-h] [-B] [-f FILE] [-n] [-d] [-u FILE] [target [target ...]]
+    usage: produce [-h] [-B] [-f FILE] [-n] [-d] [-j JOBS] [-u FILE]
+                   [target [target ...]]
     
     positional arguments:
       target                the target(s) to produce - if omitted, default target
@@ -635,6 +636,8 @@ help message:
       -n, --dry-run         print the commands that would be executed, but do not
                             execute them
       -d, --debug           print debugging information
+      -j JOBS, --jobs JOBS  Specifies the number of jobs (recipes) to run
+                            simultaneously.
       -u FILE, --pretend-up-to-date FILE
                             do not rebuild FILE or its dependencies (unless they
                             are also depended on by other targets) even if out of
