@@ -415,8 +415,7 @@ class BuildIfRequiredThread(Thread):
 
     def run(self):
         try:
-            with self.production.target_lock[self.target]:
-                self.result = self.production.build_if_required(self.target)
+            self.result = self.production.build_if_required(self.target)
         except Exception as e:
             self.traceback = traceback.format_exc(1000)
 
@@ -567,14 +566,15 @@ class Production:
             run_recipe(self.target_irule[target], dry_run=self.dry_run)
 
     def build_if_required(self, target):
-        with self.fields_lock:
-            if not (self.is_out_of_date(target) or self.is_missing(target)):
-                return False
-        self.build(target)
-        with self.fields_lock:
-            self.out_of_date_targets.discard(target)
-            self.missing_targets.discard(target)
-        return True
+        with self.target_lock[target]:
+            with self.fields_lock:
+                if not (self.is_out_of_date(target) or self.is_missing(target)):
+                    return False
+            self.build(target)
+            with self.fields_lock:
+                self.out_of_date_targets.discard(target)
+                self.missing_targets.discard(target)
+            return True
 
     def produce(self, targets):
         # Phase 1: build dependency graph and gather information
