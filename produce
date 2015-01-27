@@ -14,6 +14,7 @@ import time
 import traceback
 
 from collections import defaultdict, OrderedDict
+from contextlib import ExitStack
 from tempfile import NamedTemporaryFile
 from threading import BoundedSemaphore, RLock, Thread
 
@@ -566,14 +567,25 @@ class Production:
             run_recipe(self.target_irule[target], dry_run=self.dry_run)
 
     def build_if_required(self, target):
-        with self.target_lock[target]:
+        # Determine the outputs the rule produces:
+        outputs = [target]
+        if 'outputs' in self.target_irule[target]:
+            outputs.extend(shlex.split(self.target_irule[target]['outputs']))
+        with ExitStack() as stack:
+            # Acquire the locks for all outputs:
+            for output in outputs:
+                stack.enter_context(self.target_lock[output])
+            # If the target is up-to-date and non-missing, we're done:
             with self.fields_lock:
                 if not (self.is_out_of_date(target) or self.is_missing(target)):
                     return False
+            # Build the target:
             self.build(target)
+            # All outputs are now up-to-date and non-missing:
             with self.fields_lock:
-                self.out_of_date_targets.discard(target)
-                self.missing_targets.discard(target)
+                for output in outputs:
+                    self.out_of_date_targets.discard(output)
+                    self.missing_targets.discard(output)
             return True
 
     def produce(self, targets):
