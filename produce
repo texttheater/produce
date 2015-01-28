@@ -448,6 +448,7 @@ class Production:
         self.build_sema = BoundedSemaphore(jobs)
         # Initialize fields to store information about individual targets:
         self.targets = []
+        self.target_outputs = {}
         self.target_irule = {} # maps targets to key-instantiated value maps ("instantiated rules")
         self.target_ddeps = {} # direct dependencies
         self.target_time = {}
@@ -465,6 +466,17 @@ class Production:
             return
         # Make instantiated rule:
         irule = create_irule(target, self.rules, self.globes)
+        # Determine outputs:
+        if 'outputs' in irule:
+            outputs = shlex.split(irule['outputs'])
+        else:
+            outputs = []
+        # Catch "soft cyclic dependencies":
+        for output in outputs:
+            if output in beam:
+                raise ProduceError(
+                        'cyclic dependency: {}, which has {} as output'.format(
+                        ' -> '.join(beam), output))
         # The first direct dependency is the depfile, if any:
         if 'depfile' in irule:
             ddep = irule['depfile']
@@ -528,6 +540,7 @@ class Production:
             touch(self.changed_ddeps[target], now() + 1)
         # Store information about this target:
         self.targets.append(target)
+        self.target_outputs[target] = outputs
         self.target_irule[target] = irule
         self.target_ddeps[target] = ddeps
         self.target_time[target] = time
@@ -567,12 +580,10 @@ class Production:
             run_recipe(self.target_irule[target], dry_run=self.dry_run)
 
     def build_if_required(self, target):
-        # Determine the outputs the rule produces:
-        outputs = [target]
-        if 'outputs' in self.target_irule[target]:
-            outputs.extend(shlex.split(self.target_irule[target]['outputs']))
-        with ExitStack() as stack:
-            # Acquire the locks for all outputs:
+        outputs = sorted(set([target] + self.target_outputs[target]))
+        with ExitStack() as stack: # TODO ExitStack only in 3.3 and above, can we use something else?
+            # Acquire lock for all outputs. Order is important to avoid
+            # deadlocks. Release is automatic on leaving the context of stack.
             for output in outputs:
                 stack.enter_context(self.target_lock[output])
             # If the target is up-to-date and non-missing, we're done:
