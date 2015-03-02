@@ -11,7 +11,6 @@ import shutil
 import subprocess
 import sys
 import time
-import traceback
 
 from collections import defaultdict, OrderedDict
 from contextlib import ExitStack
@@ -412,17 +411,19 @@ class BuildIfRequiredThread(Thread):
         Thread.__init__(self)
         self.production = production
         self.target = target
-        self.traceback = None
+        self.exception = None
 
     def run(self):
         try:
             self.result = self.production.build_if_required(self.target)
         except Exception as e:
-            self.traceback = traceback.format_exc(1000)
+            # Here we could store the stacktrace in case we want to inspect it
+            # the calling thread, but currently it's not needed.
+            self.exception = e
 
     def get_result(self):
-        if self.traceback:
-            raise ProduceError(self.traceback)
+        if self.exception:
+            raise self.exception
         return self.result
 
 class Production:
