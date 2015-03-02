@@ -211,7 +211,9 @@ def interpolate(string, varz, ignore_undefined=False,
                 logging.debug('looking for } in %s, starting at %s', string,
                         start)
                 index = string.index('}', start)
-                expression = string[2:index]
+                # Add parentheses so users don't need to add them for sequence
+                # expressions:
+                expression = '(' + string[2:index] + ')'
                 try:
                     value = eval(expression, varz)
                     logging.debug('interpolating %s into %s', expression, value)
