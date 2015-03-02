@@ -673,6 +673,13 @@ when there are matching conditions to make subdistinctions.
 
 If no rule matches a target, Produce aborts with an error message.
 
+Tips and tricks
+---------------
+
+### Calling the shell
+
+### Shipping Produce with your projects
+
 Internals
 ---------
 
