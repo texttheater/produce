@@ -78,6 +78,9 @@ def rename_if_exists(src, dst):
         if e.errno != errno.ENOENT:
             raise e
 
+def shlex_join(value):
+    return ' '.join((shlex.quote(str(x)) for x in value))
+
 ### ERRORS
 
 class ProduceError(Exception):
@@ -212,7 +215,7 @@ def interpolate(string, varz, ignore_undefined=False,
                 try:
                     value = eval(expression, varz)
                     logging.debug('interpolating %s into %s', expression, value)
-                    result += str(value)
+                    result += value_to_string(value)
                     string = string[index + 1:]
                     break
                 except SyntaxError as e:
@@ -243,6 +246,14 @@ def interpolate(string, varz, ignore_undefined=False,
             result += string[:1]
             string = string[1:]
     return result
+
+def value_to_string(value):
+    if isinstance(value, str):
+        return value
+    try:
+        return shlex_join(value)
+    except TypeError:
+        return str(value)
 
 def section_name_to_regex(name, globes={}):
     if len(name) > 1 and name.startswith('/') and name.endswith('/'):
