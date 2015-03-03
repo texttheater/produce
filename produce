@@ -18,6 +18,11 @@ from threading import BoundedSemaphore, RLock, Thread
 
 ### PLANNED FEATURES
 
+# TODO change log output to be both friendlier to the human eye and more
+# machine-readable. Then write unit tests that check for not doing the same
+# thing twice, e.g. when two targets are outputs of the same IRule or when a
+# recipe fails for a target that multiple other targets depend on. Then,
+# finally, merge feat/outputs into master.
 # TODO includes
 # TODO variation on the file rule type that unconditionally runs the recipe
 # but with a temp file with target, then percolates dirtiness only if the new
