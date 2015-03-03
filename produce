@@ -13,6 +13,7 @@ import sys
 import time
 
 from collections import defaultdict, OrderedDict
+from contextlib import ExitStack
 from tempfile import NamedTemporaryFile
 from threading import BoundedSemaphore, RLock, Thread
 
@@ -303,7 +304,7 @@ def produce_pattern_to_regex(pattern, globes={}):
 # as well as some of the dicts in Production into a Target class for a nicer
 # abstraction.
 
-def run_recipe(irule, dry_run=False):
+def run_recipe(irule, outputs, dry_run=False):
     if not 'recipe' in irule:
         return
     target = irule['target']
@@ -320,9 +321,12 @@ def run_recipe(irule, dry_run=False):
         recipe = recipe[1:]
     print(indent(recipe)) # TODO add --s --silent --quiet option
     if not dry_run:
-        # Remove old backup file, if any:
+        # Remove old backup files, if any:
         if irule['type'] == 'file':
             backup_name = target + '~'
+            remove_if_exists(backup_name)
+        for output in outputs:
+            backup_name = output + '~'
             remove_if_exists(backup_name)
         with NamedTemporaryFile(mode='w') as recipefile:
             recipefile.write(recipe)
@@ -334,13 +338,18 @@ def run_recipe(irule, dry_run=False):
             except KeyboardInterrupt as e:
                 interrupted = True
         if interrupted or exit != 0:
-            # The target may have been touched but since the recipe failed, it
-            # probably doesn't have the right content now. In order to prevent
-            # future invocations of Produce from treating it as up to date, we
-            # rename it, appending a tilde to the name:
+            # The outputs may have been touched but since the recipe failed,
+            # they probably don't have the right contents now. In order to
+            # prevent future invocations of Produce from treating them as up to
+            # date, we rename them, appending a tilde to the name:
             if irule['type'] == 'file':
+                backup_name = target + '~'
                 logging.debug('renaming %s to %s', target, backup_name)
                 rename_if_exists(target, backup_name)
+            for output in outputs:
+                backup_name = output + '~'
+                logging.debug('renaming %s to %s', output, backup_name)
+                rename_if_exists(output, backup_name)
         if interrupted:
             raise ProduceError('interrupted while executing recipe')
         if exit != 0:
@@ -429,8 +438,7 @@ class BuildIfRequiredThread(Thread):
 
     def run(self):
         try:
-            with self.production.target_lock[self.target]:
-                self.result = self.production.build_if_required(self.target)
+            self.result = self.production.build_if_required(self.target)
         except Exception as e:
             # Here we could store the stacktrace in case we want to inspect it
             # the calling thread, but currently it's not needed.
@@ -464,12 +472,19 @@ class Production:
         self.build_sema = BoundedSemaphore(jobs)
         # Initialize fields to store information about individual targets:
         self.targets = []
+        self.target_outputs = {}
         self.target_irule = {} # maps targets to key-instantiated value maps ("instantiated rules")
         self.target_ddeps = {} # direct dependencies
         self.target_time = {}
         self.out_of_date_targets = set()
         self.missing_targets = set()
-        self.changed_ddeps = {} # maps a dependent to a changed direct dependency that causes it to be out of date
+        # If a recipe for a target fails, store the exception for the benefit
+        # of other threads that need the same target. Instead of trying to
+        # build it again, they can just raise the existing exception.
+        self.target_exception = {}
+        # Maps a dependent to a changed direct dependency that causes it to be
+        # out of date:
+        self.changed_ddeps = {}
 
     def add_target(self, target, beam):
         # Catch cyclic dependencies:
@@ -481,6 +496,17 @@ class Production:
             return
         # Make instantiated rule:
         irule = create_irule(target, self.rules, self.globes)
+        # Determine outputs:
+        if 'outputs' in irule:
+            outputs = shlex.split(irule['outputs'])
+        else:
+            outputs = []
+        # Catch "soft cyclic dependencies":
+        for output in outputs:
+            if output in beam:
+                raise ProduceError(
+                        'cyclic dependency: {}, which has {} as output'.format(
+                        ' -> '.join(beam), output))
         # The first direct dependency is the depfile, if any:
         if 'depfile' in irule:
             ddep = irule['depfile']
@@ -544,6 +570,7 @@ class Production:
             touch(self.changed_ddeps[target], now() + 1)
         # Store information about this target:
         self.targets.append(target)
+        self.target_outputs[target] = outputs
         self.target_irule[target] = irule
         self.target_ddeps[target] = ddeps
         self.target_time[target] = time
@@ -565,7 +592,7 @@ class Production:
     def is_missing(self, target):
         return target in self.missing_targets
 
-    def build(self, target):
+    def build(self, target, outputs):
         if target in self.pretend_up_to_date:
             return # TODO need to raise error somewhere if target is a file and doesn't exist
         # Build required dependencies in parallel:
@@ -580,17 +607,36 @@ class Production:
             thread.get_result() # in order to propagate any exceptions
         # Run recipe. Semaphore limits number of parallel recipes:
         with self.build_sema:
-            run_recipe(self.target_irule[target], dry_run=self.dry_run)
+            run_recipe(self.target_irule[target], outputs, dry_run=self.dry_run)
 
     def build_if_required(self, target):
-        with self.fields_lock:
-            if not (self.is_out_of_date(target) or self.is_missing(target)):
-                return False
-        self.build(target)
-        with self.fields_lock:
-            self.out_of_date_targets.discard(target)
-            self.missing_targets.discard(target)
-        return True
+        outputs = sorted(set(self.target_outputs[target]))
+        with ExitStack() as stack: # TODO ExitStack only in 3.3 and above, can we use something else?
+            # Acquire lock for all outputs. Order is important to avoid
+            # deadlocks. Release is automatic on leaving the context of stack.
+            for output in outputs + [target]:
+                stack.enter_context(self.target_lock[output])
+            with self.fields_lock:
+                # If the target is up-to-date and non-missing, we're done:
+                if not (self.is_out_of_date(target) or self.is_missing(target)):
+                    return False
+                # If building the target encountered an exception before, we also
+                # raise it:
+                if target in self.target_exception:
+                    raise self.target_exception[target]
+            # Build the target:
+            try:
+                self.build(target, outputs)
+            except Exception as e:
+                with self.fields_lock:
+                    self.target_exception[output] = e
+                raise e
+            # All outputs are now up-to-date and non-missing:
+            with self.fields_lock:
+                for output in outputs + [target]:
+                    self.out_of_date_targets.discard(output)
+                    self.missing_targets.discard(output)
+            return True
 
     def produce(self, targets):
         # Phase 1: build dependency graph and gather information
