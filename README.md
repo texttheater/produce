@@ -468,8 +468,8 @@ we already know and (hopefully) like:
 
     [foo]
     deps = %{sources}
-    recipe = cc %{' '.join([f for f in sources.split() \
-    		if f.endswith('.c') or f.endswith('.s')])}
+    recipe = cc %{f for f in sources.split() \
+    		if f.endswith('.c') or f.endswith('.s')}
 
 This example also introduces the _global section_, a section headed by `[]`,
 thus named with the empty string. The attributes here define global variables
