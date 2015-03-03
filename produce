@@ -300,62 +300,6 @@ def produce_pattern_to_regex(pattern, globes={}):
 # special keys, target (the target as matched by the section header), and type,
 # which must be one of file and task and defaults to file.
 
-# TODO: Wrap these dictionaries, the following functions that operate on them
-# as well as some of the dicts in Production into a Target class for a nicer
-# abstraction.
-
-def run_recipe(irule, outputs, dry_run=False):
-    if not 'recipe' in irule:
-        return
-    target = irule['target']
-    if irule['type'] == 'task':
-        logging.info('running task %s', target)
-    else:
-        if os.path.exists(target):
-            logging.info('rebuilding file %s', target)
-        else:
-            logging.info('building file %s', target)
-    recipe = irule['recipe']
-    executable = irule.get('shell', 'bash')
-    if recipe.startswith('\n'):
-        recipe = recipe[1:]
-    print(indent(recipe)) # TODO add --s --silent --quiet option
-    if not dry_run:
-        # Remove old backup files, if any:
-        if irule['type'] == 'file':
-            backup_name = target + '~'
-            remove_if_exists(backup_name)
-        for output in outputs:
-            backup_name = output + '~'
-            remove_if_exists(backup_name)
-        with NamedTemporaryFile(mode='w') as recipefile:
-            recipefile.write(recipe)
-            recipefile.flush()
-            interrupted = False
-            try:
-                exit = subprocess.call([executable, recipefile.name],
-                        stdin=sys.stdin)
-            except KeyboardInterrupt as e:
-                interrupted = True
-        if interrupted or exit != 0:
-            # The outputs may have been touched but since the recipe failed,
-            # they probably don't have the right contents now. In order to
-            # prevent future invocations of Produce from treating them as up to
-            # date, we rename them, appending a tilde to the name:
-            if irule['type'] == 'file':
-                backup_name = target + '~'
-                logging.debug('renaming %s to %s', target, backup_name)
-                rename_if_exists(target, backup_name)
-            for output in outputs:
-                backup_name = output + '~'
-                logging.debug('renaming %s to %s', output, backup_name)
-                rename_if_exists(output, backup_name)
-        if interrupted:
-            raise ProduceError('interrupted while executing recipe')
-        if exit != 0:
-            raise ProduceError('recipe failed: {}'.format(recipe))
-        # TODO check here if file was created for file rules, raise exception if not?
-
 def create_irule(target, rules, globes):
     # Go through rules until a pattern matches the target:
     for pattern, avdict in rules:
@@ -428,7 +372,13 @@ def read_depfile(filename):
 
 ### PRODUCTION
 
-class BuildIfRequiredThread(Thread):
+class Producer(Thread):
+
+    """
+    A producer is an "actor" in charge of producing a single target. It is a
+    thread to be started, then joined. Afterwards, the get_result method can be
+    used to get the result.
+    """
 
     def __init__(self, production, target):
         Thread.__init__(self)
@@ -438,13 +388,135 @@ class BuildIfRequiredThread(Thread):
 
     def run(self):
         try:
-            self.result = self.production.build_if_required(self.target)
+            self.result = self.build_if_required()
         except Exception as e:
             # Here we could store the stacktrace in case we want to inspect it
             # the calling thread, but currently it's not needed.
             self.exception = e
 
+    def build_if_required(self):
+        """
+        (Re)builds the target of this producer unless it is already up to date.
+        This method is mainly for checking up-to-dateness and co-ordinating
+        with other Producers that are running concurrently. The core work is
+        delegated to _build.
+        """
+        outputs = sorted(set(self.production.target_outputs[self.target] + [
+                self.target]))
+        with ExitStack() as stack: # TODO ExitStack only in 3.3 and above, can we use something else?
+            # Acquire lock for all outputs. Order is important to avoid
+            # deadlocks. Release is automatic on leaving the context of stack.
+            for output in outputs:
+                stack.enter_context(self.production.target_lock[output])
+            with self.production.fields_lock:
+                # If the target is up-to-date and non-missing, we're done:
+                if not (self.production.is_out_of_date(self.target) or \
+                        self.production.is_missing(self.target)):
+                    return False
+                # If building the target encountered an exception before, we also
+                # raise it:
+                if self.target in self.production.target_exception:
+                    raise self.production.target_exception[self.target]
+            # Build the target:
+            try:
+                self._build()
+            except Exception as e:
+                with self.production.fields_lock:
+                    self.production.target_exception[output] = e
+                raise e
+            # All outputs are now up-to-date and non-missing:
+            with self.production.fields_lock:
+                for output in outputs:
+                    self.production.out_of_date_targets.discard(output)
+                    self.production.missing_targets.discard(output)
+            return True
+
+    def _build(self):
+        """
+        If it has been decided that a target is out of date, this is the
+        method that (re)builds it, unless we use the -u feature and pretend the
+        target is up to date. As a prerequisite, the method first makes sure
+        all direct dependencies are up to date by spawning and joining
+        corresponding Producers.
+        """
+        if self.target in self.production.pretend_up_to_date:
+            return # TODO need to raise error somewhere if target is a file and doesn't exist
+        # Build required dependencies in parallel:
+        threads = []
+        for ddep in self.production.target_ddeps[self.target]:
+            threads.append(Producer(self.production, ddep))
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        for thread in threads:
+            thread.get_result() # in order to propagate any exceptions
+        # Run recipe. Semaphore limits number of parallel recipes:
+        with self.production.build_sema:
+            self._run_recipe()
+
+    def _run_recipe(self):
+        """
+        This is where it really happens: the recipe for a target is run, and we
+        tell the use about it.
+        """
+        irule = self.production.target_irule[self.target]
+        if not 'recipe' in irule:
+            return
+        target = irule['target']
+        if irule['type'] == 'task':
+            logging.info('running task %s', target)
+        else:
+            if os.path.exists(target):
+                logging.info('rebuilding file %s', target)
+            else:
+                logging.info('building file %s', target)
+        recipe = irule['recipe']
+        executable = irule.get('shell', 'bash')
+        if recipe.startswith('\n'):
+            recipe = recipe[1:]
+        print(indent(recipe)) # TODO add --s --silent --quiet option
+        if not self.production.dry_run:
+            # Remove old backup files, if any:
+            if irule['type'] == 'file':
+                backup_name = target + '~'
+                remove_if_exists(backup_name)
+            for output in self.production.target_outputs[target]:
+                backup_name = output + '~'
+                remove_if_exists(backup_name)
+            with NamedTemporaryFile(mode='w') as recipefile:
+                recipefile.write(recipe)
+                recipefile.flush()
+                interrupted = False
+                try:
+                    exit = subprocess.call([executable, recipefile.name],
+                            stdin=sys.stdin)
+                except KeyboardInterrupt as e:
+                    interrupted = True
+            if interrupted or exit != 0:
+                # The outputs may have been touched but since the recipe failed,
+                # they probably don't have the right contents now. In order to
+                # prevent future invocations of Produce from treating them as up to
+                # date, we rename them, appending a tilde to the name:
+                if irule['type'] == 'file':
+                    backup_name = target + '~'
+                    logging.debug('renaming %s to %s', target, backup_name)
+                    rename_if_exists(target, backup_name)
+                for output in self.production.target_outputs[target]:
+                    backup_name = output + '~'
+                    logging.debug('renaming %s to %s', output, backup_name)
+                    rename_if_exists(output, backup_name)
+            if interrupted:
+                raise ProduceError('interrupted while executing recipe')
+            if exit != 0:
+                raise ProduceError('recipe failed: {}'.format(recipe))
+            # TODO check here if file was created for file rules, raise exception if not?
+    
     def get_result(self):
+        """
+        Returns True if the target was (re)built, False if the target was
+        already update. Raises a ProduceError if something went wrong.
+        """
         if self.exception:
             raise self.exception
         return self.result
@@ -513,7 +585,7 @@ class Production:
             # Add it recursively:
             self.add_target(ddep, beam + [target])
             # Make sure it's up to date:
-            self.build_if_required(ddep) # TODO do this asynchronously like for normal targets
+            Producer(self, ddep).build_if_required() # TODO do this asynchronously like for normal targets
         # Determine other dependencies and add them recursively:
         ddeps = list_ddeps(irule)
         logging.debug('%s <- %s', target, ddeps)
@@ -592,52 +664,6 @@ class Production:
     def is_missing(self, target):
         return target in self.missing_targets
 
-    def build(self, target, outputs):
-        if target in self.pretend_up_to_date:
-            return # TODO need to raise error somewhere if target is a file and doesn't exist
-        # Build required dependencies in parallel:
-        threads = []
-        for ddep in self.target_ddeps[target]:
-            threads.append(BuildIfRequiredThread(self, ddep))
-        for thread in threads:
-            thread.start()
-        for thread in threads:
-            thread.join()
-        for thread in threads:
-            thread.get_result() # in order to propagate any exceptions
-        # Run recipe. Semaphore limits number of parallel recipes:
-        with self.build_sema:
-            run_recipe(self.target_irule[target], outputs, dry_run=self.dry_run)
-
-    def build_if_required(self, target):
-        outputs = sorted(set(self.target_outputs[target]))
-        with ExitStack() as stack: # TODO ExitStack only in 3.3 and above, can we use something else?
-            # Acquire lock for all outputs. Order is important to avoid
-            # deadlocks. Release is automatic on leaving the context of stack.
-            for output in outputs + [target]:
-                stack.enter_context(self.target_lock[output])
-            with self.fields_lock:
-                # If the target is up-to-date and non-missing, we're done:
-                if not (self.is_out_of_date(target) or self.is_missing(target)):
-                    return False
-                # If building the target encountered an exception before, we also
-                # raise it:
-                if target in self.target_exception:
-                    raise self.target_exception[target]
-            # Build the target:
-            try:
-                self.build(target, outputs)
-            except Exception as e:
-                with self.fields_lock:
-                    self.target_exception[output] = e
-                raise e
-            # All outputs are now up-to-date and non-missing:
-            with self.fields_lock:
-                for output in outputs + [target]:
-                    self.out_of_date_targets.discard(output)
-                    self.missing_targets.discard(output)
-            return True
-
     def produce(self, targets):
         # Phase 1: build dependency graph and gather information
         for target in targets:
@@ -645,7 +671,7 @@ class Production:
         # Phase 2: build all we need to build
         threads = []
         for target in targets:
-            threads.append(BuildIfRequiredThread(self, target))
+            threads.append(Producer(self, target))
         for thread in threads:
             thread.start()
         for thread in threads:
