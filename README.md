@@ -9,7 +9,7 @@ but many variable parts, e.g. to indicate experimental parameters.
 
 <!-- START doctoc generated TOC please keep comment here to allow auto update -->
 <!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
-**Table of Contents**  *generated with [DocToc](http://doctoc.herokuapp.com/)*
+**Table of Contents**  *generated with [DocToc](https://github.com/thlorenz/doctoc)*
 
 - [Requirements](#requirements)
 - [Obtaining Produce](#obtaining-produce)
@@ -28,6 +28,7 @@ but many variable parts, e.g. to indicate experimental parameters.
   - [`shell`: choosing the recipe interpreter](#shell-choosing-the-recipe-interpreter)
   - [The prelude](#the-prelude)
   - [Dependency files](#dependency-files)
+  - [Rules with multiple outputs](#rules-with-multiple-outputs)
   - [All special attributes at a glance](#all-special-attributes-at-a-glance)
     - [In rules](#in-rules)
     - [In the global section](#in-the-global-section)
@@ -540,6 +541,56 @@ Note that the `.c` file will end up in the dependency list twice, once from
 `dep.src` and once from the dependency file. This does not matter, Produce is
 smart enough not to do the same thing twice.
 
+### Rules with multiple outputs
+
+Sometimes you have a command that creates multiple files at once because their
+creation is inherently linked to the same process – it wouldn’t make sense to
+try and create them in neatly separated steps. Splitting a file up into
+multiple chunks is such a case:
+
+    split -n 4 data.txt
+
+This command creates four files called `xaa`, `xab`, `xac` and `xad`. It gets
+complicated when these output files individually are dependencies of further
+targets, as in this example:
+
+    [split_and_zip]
+    type = task
+    deps = xaa.zip xab.zip xac.zip xad.zip
+
+    [%{name}.zip]
+    dep.file = %{name}
+    recipe = zip %{target} %{file}
+
+    [%{chunk}]
+    dep.txt = data.txt
+    recipe = split -n 4 %{txt}
+
+If we run the task `split_and_zip`, it will try to create its (indirect)
+dependencies `xaa`, `xab`, `xac` and `xad` independently of each other. Each
+time, the last rule will match, and each time, the exact same recipe will be
+executed. This is unncecessary work, one time would be sufficient because it
+creates all four files in each case. Worse, if we run Produce in parallel,
+multiple instances of the recipe may run in parallel and corrupt the data.
+
+The solution is to explicitly declare which files a rule produces, other than
+the target. The `output` attribute serves this purpose. With it, the last rule
+is rewritten as follows:
+
+    [%{chunk}]
+    outputs = xaa xab xac xad
+    dep.txt = data.txt
+    recipe = split -n 4 %{txt}
+
+Additionally, it is good style to add a matching condition to prevent that the
+rule accidentally matches something that is not its output:
+
+    [%{chunk}]
+    outputs = xaa xab xac xad
+    cond = %{target in outputs.split()}
+    dep.txt = data.txt
+    recipe = split -n 4 %{txt}
+
 ### All special attributes at a glance
 
 For your reference, here are all the rule attributes that currently have a
@@ -596,6 +647,8 @@ special meaning to Produce:
     <a href="#rules-expansions-escaping-and-comments">Rules, expansions, escaping and comments</a>.</dd>
     <dt><code>shell</code></dt>
     <dd>See <a href="#shell-choosing-the-recipe-interpreter"><code>shell</code>: choosing the recipe interpreter</a></dd>
+    <dt><code>outputs</code></dt>
+    <dd>See <a href="#rules-with-multiple-outputs">Rules with multiple outputs</a></dd>
 </dl>
 
 #### In the global section
