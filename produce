@@ -289,7 +289,7 @@ def produce_pattern_to_regex(pattern, globes={}):
 # as well as some of the dicts in Production into a Target class for a nicer
 # abstraction.
 
-def run_recipe(irule, dry_run=False):
+def run_recipe(irule, outputs, dry_run=False):
     if not 'recipe' in irule:
         return
     target = irule['target']
@@ -306,9 +306,12 @@ def run_recipe(irule, dry_run=False):
         recipe = recipe[1:]
     print(indent(recipe)) # TODO add --s --silent --quiet option
     if not dry_run:
-        # Remove old backup file, if any:
+        # Remove old backup files, if any:
         if irule['type'] == 'file':
             backup_name = target + '~'
+            remove_if_exists(backup_name)
+        for output in outputs:
+            backup_name = output + '~'
             remove_if_exists(backup_name)
         with NamedTemporaryFile(mode='w') as recipefile:
             recipefile.write(recipe)
@@ -320,13 +323,18 @@ def run_recipe(irule, dry_run=False):
             except KeyboardInterrupt as e:
                 interrupted = True
         if interrupted or exit != 0:
-            # The target may have been touched but since the recipe failed, it
-            # probably doesn't have the right content now. In order to prevent
-            # future invocations of Produce from treating it as up to date, we
-            # rename it, appending a tilde to the name:
+            # The outputs may have been touched but since the recipe failed,
+            # they probably don't have the right contents now. In order to
+            # prevent future invocations of Produce from treating them as up to
+            # date, we rename them, appending a tilde to the name:
             if irule['type'] == 'file':
+                backup_name = target + '~'
                 logging.debug('renaming %s to %s', target, backup_name)
                 rename_if_exists(target, backup_name)
+            for output in outputs:
+                backup_name = output + '~'
+                logging.debug('renaming %s to %s', output, backup_name)
+                rename_if_exists(output, backup_name)
         if interrupted:
             raise ProduceError('interrupted while executing recipe')
         if exit != 0:
@@ -563,7 +571,7 @@ class Production:
     def is_missing(self, target):
         return target in self.missing_targets
 
-    def build(self, target):
+    def build(self, target, outputs):
         if target in self.pretend_up_to_date:
             return # TODO need to raise error somewhere if target is a file and doesn't exist
         # Build required dependencies in parallel:
@@ -578,10 +586,10 @@ class Production:
             thread.get_result() # in order to propagate any exceptions
         # Run recipe. Semaphore limits number of parallel recipes:
         with self.build_sema:
-            run_recipe(self.target_irule[target], dry_run=self.dry_run)
+            run_recipe(self.target_irule[target], outputs, dry_run=self.dry_run)
 
     def build_if_required(self, target):
-        outputs = sorted(set([target] + self.target_outputs[target]))
+        outputs = sorted(set(self.target_outputs[target]))
         with ExitStack() as stack: # TODO ExitStack only in 3.3 and above, can we use something else?
             # Acquire lock for all outputs. Order is important to avoid
             # deadlocks. Release is automatic on leaving the context of stack.
@@ -592,10 +600,10 @@ class Production:
                 if not (self.is_out_of_date(target) or self.is_missing(target)):
                     return False
             # Build the target:
-            self.build(target)
+            self.build(target, outputs)
             # All outputs are now up-to-date and non-missing:
             with self.fields_lock:
-                for output in outputs:
+                for output in outputs + [target]:
                     self.out_of_date_targets.discard(output)
                     self.missing_targets.discard(output)
             return True
