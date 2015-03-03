@@ -593,7 +593,7 @@ class Production:
         with ExitStack() as stack: # TODO ExitStack only in 3.3 and above, can we use something else?
             # Acquire lock for all outputs. Order is important to avoid
             # deadlocks. Release is automatic on leaving the context of stack.
-            for output in outputs:
+            for output in outputs + [target]:
                 stack.enter_context(self.target_lock[output])
             # If the target is up-to-date and non-missing, we're done:
             with self.fields_lock:
