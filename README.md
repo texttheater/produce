@@ -383,7 +383,7 @@ not match, and Produce moves on, trying to match the next rule in the
 Producefile.
 
 Note that the Python expression is given as an expansion. At this point we
-should explain three fine points:
+should explain a few fine points:
 
 1. Whenever we used expansions so far, the variable names inside were actually
    Python expressions, albeit of a simple kind: single variable names. But as
@@ -400,6 +400,17 @@ should explain three fine points:
    [ast.literal\_eval](https://docs.python.org/3/library/ast.html?highlight=literal_eval#ast.literal_eval)
    on the string. So if the string contains anything other than a literal
    Python expression, this is an error.
+
+As an exception to what we said about `__str__`, if an expansion evaluates to
+something that is not a string but has an `__iter__` method, it will be treated
+as a sequence and rendered as a white-space separated list, the elements
+properly shell-quoted and escaped. Note also that parentheses are automatically
+added around an expansion so it is very convenient to use generator expressions
+for expansions. All of this is illustrated in the following rule:
+
+    [Whole.txt]
+    deps = %{'Part {}.txt'.format(i) for i in range(4)}
+    recipe = cat %{deps} > %{target}
 
 ### Special targets vs. special attributes
 
