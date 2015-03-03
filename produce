@@ -463,7 +463,13 @@ class Production:
         self.target_time = {}
         self.out_of_date_targets = set()
         self.missing_targets = set()
-        self.changed_ddeps = {} # maps a dependent to a changed direct dependency that causes it to be out of date
+        # If a recipe for a target fails, store the exception for the benefit
+        # of other threads that need the same target. Instead of trying to
+        # build it again, they can just raise the existing exception.
+        self.target_exception = {}
+        # Maps a dependent to a changed direct dependency that causes it to be
+        # out of date:
+        self.changed_ddeps = {}
 
     def add_target(self, target, beam):
         # Catch cyclic dependencies:
@@ -595,12 +601,21 @@ class Production:
             # deadlocks. Release is automatic on leaving the context of stack.
             for output in outputs + [target]:
                 stack.enter_context(self.target_lock[output])
-            # If the target is up-to-date and non-missing, we're done:
             with self.fields_lock:
+                # If the target is up-to-date and non-missing, we're done:
                 if not (self.is_out_of_date(target) or self.is_missing(target)):
                     return False
+                # If building the target encountered an exception before, we also
+                # raise it:
+                if target in self.target_exception:
+                    raise self.target_exception[target]
             # Build the target:
-            self.build(target, outputs)
+            try:
+                self.build(target, outputs)
+            except Exception as e:
+                with self.fields_lock:
+                    self.target_exception[output] = e
+                raise e
             # All outputs are now up-to-date and non-missing:
             with self.fields_lock:
                 for output in outputs + [target]:
