@@ -146,14 +146,14 @@ def process_commandline(args=None):
     parser = argparse.ArgumentParser()
     parser.add_argument('-B', '--always-build', action='store_true',
             help="""unconditionally build all targets""")
-    parser.add_argument('-f', '--file', default='produce.ini',
-            help="""use FILE as a Producefile""")
-    parser.add_argument('-n', '--dry-run', action='store_true', help="""print
-            the commands that would be executed, but do not execute them""")
     parser.add_argument('-d', '--debug', action='store_true', help="""print
             debugging information""")
+    parser.add_argument('-f', '--file', default='produce.ini',
+            help="""use FILE as a Producefile""")
     parser.add_argument('-j', '--jobs', type=int, default=1, help="""Specifies
             the number of jobs (recipes) to run simultaneously.""")
+    parser.add_argument('-n', '--dry-run', action='store_true', help="""print
+            the commands that would be executed, but do not execute them""")
     parser.add_argument('-u', '--pretend-up-to-date', metavar='FILE',
             action='append', default=[],
             help="""do not rebuild FILE or its dependencies (unless they are
