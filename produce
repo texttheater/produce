@@ -154,6 +154,8 @@ def process_commandline(args=None):
             the number of jobs (recipes) to run simultaneously.""")
     parser.add_argument('-n', '--dry-run', action='store_true', help="""print
             the commands that would be executed, but do not execute them""")
+    parser.add_argument('-s', '--silent', action='store_true', help="""don't
+            print the commands that are executed""")
     parser.add_argument('-u', '--pretend-up-to-date', metavar='FILE',
             action='append', default=[],
             help="""do not rebuild FILE or its dependencies (unless they are
@@ -526,7 +528,8 @@ class Producer(Thread):
         executable = irule.get('shell', 'bash')
         if recipe.startswith('\n'):
             recipe = recipe[1:]
-        print(recipe) # TODO add --s --silent --quiet option
+        if not self.production.silent:
+            print(recipe)
         if not self.production.dry_run:
             # Remove old backup files, if any:
             if irule['type'] == 'file':
@@ -581,13 +584,14 @@ class Production:
     """
 
     def __init__(self, targets, rules, globes, dry_run, always_build, jobs,
-            pretend_up_to_date):
+            pretend_up_to_date, silent):
         # General properties, passed as arguments to constructor:
         self.rules = rules # maps patterns to key-uninstantiated value maps ("rules")
         self.globes = globes
         self.dry_run = dry_run
         self.always_build = always_build
         self.pretend_up_to_date = pretend_up_to_date
+        self.silent = silent
         # Create locks for the building phase:
         self.fields_lock = RLock()
         self.target_lock = defaultdict(RLock)
@@ -769,7 +773,8 @@ def produce(args=[]):
         exec(globes.get('prelude', ''), globes)
         # Produce:
         Production(targets, rules, globes, args.dry_run, args.always_build,
-                args.jobs, args.pretend_up_to_date).produce(targets)
+                args.jobs, args.pretend_up_to_date, args.silent).produce(
+                targets)
     except KeyboardInterrupt as e:
         raise ProduceError('interrupted')
 
