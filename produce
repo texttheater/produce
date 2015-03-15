@@ -64,9 +64,6 @@ def mtime(path, default=0):
 def now():
     return time.time()
 
-def indent(string):
-    return os.linesep.join(map(lambda x : '    ' + x, string.splitlines()))
-
 def remove_if_exists(path):
     try:
         os.remove(path)
@@ -529,7 +526,7 @@ class Producer(Thread):
         executable = irule.get('shell', 'bash')
         if recipe.startswith('\n'):
             recipe = recipe[1:]
-        print(indent(recipe)) # TODO add --s --silent --quiet option
+        print(recipe) # TODO add --s --silent --quiet option
         if not self.production.dry_run:
             # Remove old backup files, if any:
             if irule['type'] == 'file':
