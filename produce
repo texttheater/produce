@@ -34,9 +34,20 @@ from threading import BoundedSemaphore, RLock, Thread
 # TODO optionally delete intermediate files
 # TODO rename private members
 
-### GLOBALS
+### CUSTOMIZED LOGGING
+# It's a pain in the neck in Python.
+
+class TargetLogFormatter(logging.Formatter):
+    pass # TODO customize
 
 logger = logging.getLogger('produce')
+logger.propagate = False
+logger.setLevel(logging.INFO)
+handler = logging.StreamHandler()
+handler.setLevel(logging.INFO)
+formatter = TargetLogFormatter()
+handler.setFormatter(formatter)
+logger.addHandler(handler)
 
 ### UTILITIES
 
