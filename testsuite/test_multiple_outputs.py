@@ -13,7 +13,7 @@ class MultipleOutputsTest(prodtest.ProduceTestCase):
         target, thus two INFO messages are generated:
         """
         self.assertDirectoryContents(['produce.ini', 'Makefile'])
-        with self.assertLogs(level='INFO') as l:
+        with self.assertLogs(logger='produce', level='INFO') as l:
             self.produce('a.txt', 'b.txt')
         self.assertEqual(len(l.output), 2)
         self.assertDirectoryContents(['produce.ini', 'Makefile', 'a.txt', 'b.txt'])
@@ -23,7 +23,7 @@ class MultipleOutputsTest(prodtest.ProduceTestCase):
         With the outputs attribute, the recipe is run only once:
         """
         self.assertDirectoryContents(['produce.ini', 'Makefile'])
-        with self.assertLogs(level='INFO') as l:
+        with self.assertLogs(logger='produce', level='INFO') as l:
             self.produce('c.txt', 'd.txt')
         self.assertEqual(len(l.output), 1)
         self.assertDirectoryContents(['produce.ini', 'Makefile', 'c.txt', 'd.txt'])
