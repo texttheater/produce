@@ -10,7 +10,7 @@ class DudedepSuccessTest(prodtest.ProduceTestCase):
 
     def test(self):
         self.assertDirectoryContents(['produce.ini'])
-        with self.assertLogs(level='INFO') as l:
+        with self.assertLogs(logger='produce', level='INFO') as l:
             self.produce()
         self.assertEqual(len(l.output), 3) # for a, b, y
         self.assertDirectoryContents(['produce.ini', 'a', 'b', 'y'])

@@ -11,7 +11,7 @@ class DudedepErrorTest(prodtest.ProduceTestCase):
 
     def test(self):
         self.assertDirectoryContents(['produce.ini'])
-        with self.assertLogs(level='INFO') as l:
+        with self.assertLogs(logger='produce', level='INFO') as l:
             with self.assertRaises(produce.ProduceError):
                 self.produce()
         self.assertEqual(len(l.output), 1) # for b, which fails
