@@ -34,6 +34,10 @@ from threading import BoundedSemaphore, RLock, Thread
 # TODO optionally delete intermediate files
 # TODO rename private members
 
+### GLOBALS
+
+logger = logging.getLogger('produce')
+
 ### UTILITIES
 
 def dedup(seq):
@@ -466,12 +470,12 @@ class Producer(Thread):
             return
         target = irule['target']
         if irule['type'] == 'task':
-            logging.info('running task %s', target)
+            logger.info('running task %s', target)
         else:
             if os.path.exists(target):
-                logging.info('rebuilding file %s', target)
+                logger.info('rebuilding file %s', target)
             else:
-                logging.info('building file %s', target)
+                logger.info('building file %s', target)
         recipe = irule['recipe']
         executable = irule.get('shell', 'bash')
         if recipe.startswith('\n'):
