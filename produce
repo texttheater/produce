@@ -48,7 +48,12 @@ class TargetLogMessage():
         return '{} {}'.format(self.action, self.target)
 
 class TargetLogFormatter(logging.Formatter):
-    pass # TODO customize
+
+    def format(self, record):
+        if isinstance(record.msg, TargetLogMessage):
+            return '{} {}'.format(record.msg.action, record.msg.target)
+        else:
+            return logging.Formatter.format(self, record)
 
 logger = logging.getLogger('produce')
 logger.propagate = False
