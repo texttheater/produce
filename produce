@@ -37,6 +37,14 @@ from threading import BoundedSemaphore, RLock, Thread
 ### CUSTOMIZED LOGGING
 # It's a pain in the neck in Python.
 
+class TargetLogMessage():
+
+    def __init__(self, string):
+        self.string = string
+
+    def __str__(self):
+        return self.string
+
 class TargetLogFormatter(logging.Formatter):
     pass # TODO customize
 
@@ -481,12 +489,12 @@ class Producer(Thread):
             return
         target = irule['target']
         if irule['type'] == 'task':
-            logger.info('running task %s', target)
+            logger.info(TargetLogMessage('running task %s'), target)
         else:
             if os.path.exists(target):
-                logger.info('rebuilding file %s', target)
+                logger.info(TargetLogMessage('rebuilding file %s'), target)
             else:
-                logger.info('building file %s', target)
+                logger.info(TargetLogMessage('building file %s'), target)
         recipe = irule['recipe']
         executable = irule.get('shell', 'bash')
         if recipe.startswith('\n'):
