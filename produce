@@ -380,10 +380,11 @@ class Producer(Thread):
     used to get the result.
     """
 
-    def __init__(self, production, target):
+    def __init__(self, production, target, depth=0):
         Thread.__init__(self)
         self.production = production
         self.target = target
+        self.depth = depth
         self.exception = None
 
     def run(self):
@@ -444,7 +445,7 @@ class Producer(Thread):
         # Build required dependencies in parallel:
         threads = []
         for ddep in self.production.target_ddeps[self.target]:
-            threads.append(Producer(self.production, ddep))
+            threads.append(Producer(self.production, ddep, depth=self.depth + 1))
         for thread in threads:
             thread.start()
         for thread in threads:
