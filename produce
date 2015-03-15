@@ -39,11 +39,13 @@ from threading import BoundedSemaphore, RLock, Thread
 
 class TargetLogMessage():
 
-    def __init__(self, string):
-        self.string = string
+    def __init__(self, action, target, depth):
+        self.action = action
+        self.target = target
+        self.depth = depth
 
     def __str__(self):
-        return self.string
+        return '{} {}'.format(self.action, self.target)
 
 class TargetLogFormatter(logging.Formatter):
     pass # TODO customize
@@ -489,12 +491,14 @@ class Producer(Thread):
             return
         target = irule['target']
         if irule['type'] == 'task':
-            logger.info(TargetLogMessage('running task %s'), target)
+            logger.info(TargetLogMessage('running task', target, self.depth))
         else:
             if os.path.exists(target):
-                logger.info(TargetLogMessage('rebuilding file %s'), target)
+                logger.info(TargetLogMessage('rebuilding file', target,
+                        self.depth))
             else:
-                logger.info(TargetLogMessage('building file %s'), target)
+                logger.info(TargetLogMessage('building file', target,
+                        self.depth))
         recipe = irule['recipe']
         executable = irule.get('shell', 'bash')
         if recipe.startswith('\n'):
