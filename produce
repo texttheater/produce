@@ -34,37 +34,11 @@ from threading import BoundedSemaphore, RLock, Thread
 # TODO optionally delete intermediate files
 # TODO rename private members
 
-### CUSTOMIZED LOGGING
-# It's a pain in the neck in Python.
-
-class TargetLogMessage():
-
-    def __init__(self, action, target, depth):
-        self.action = action
-        self.target = target
-        self.depth = depth
-
-    def __str__(self):
-        return '{} {}'.format(self.action, self.target)
-
-class TargetLogFormatter(logging.Formatter):
-
-    def format(self, record):
-        if isinstance(record.msg, TargetLogMessage):
-            return '{} {}'.format(record.msg.action, record.msg.target)
-        else:
-            return logging.Formatter.format(self, record)
-
-logger = logging.getLogger('produce')
-logger.propagate = False
-logger.setLevel(logging.INFO)
-handler = logging.StreamHandler()
-handler.setLevel(logging.INFO)
-formatter = TargetLogFormatter()
-handler.setFormatter(formatter)
-logger.addHandler(handler)
-
 ### UTILITIES
+
+def have_smart_terminal():
+    # courtesy of apenwarr's redo
+    return (os.environ.get('TERM') or 'dumb') != 'dumb'
 
 def dedup(seq):
     """
@@ -113,6 +87,53 @@ def rename_if_exists(src, dst):
 
 def shlex_join(value):
     return ' '.join((shlex.quote(str(x)) for x in value))
+
+### CUSTOMIZED LOGGING
+# It's a pain in the neck in Python.
+
+class TargetLogMessage():
+
+    def __init__(self, action, target, depth):
+        self.action = action
+        self.target = target
+        self.depth = depth
+
+    def __str__(self):
+        return '{} {}'.format(self.action, self.target)
+
+class TargetLogFormatter(logging.Formatter):
+
+    def __init__(self, colors):
+        logging.Formatter.__init__(self)
+        if colors:
+            self.red    = '\x1b[31m'
+            self.green  = '\x1b[32m'
+            self.yellow = '\x1b[33m'
+            self.bold   = '\x1b[1m'
+            self.plain  = '\x1b[m'
+        else:
+            self.red = ''
+            self.green = ''
+            self.yelloe = ''
+            self.bold = ''
+            self.plain = ''
+
+    def format(self, record):
+        if isinstance(record.msg, TargetLogMessage):
+            return '{}{}{}{}{}{}{}'.format(self.green, record.msg.action,
+                    ' ' * (16 - len(record.msg.action)), self.bold,
+                    ' ' * record.msg.depth, record.msg.target, self.plain)
+        else:
+            return logging.Formatter.format(self, record)
+
+logger = logging.getLogger('produce')
+logger.propagate = False
+logger.setLevel(logging.INFO)
+handler = logging.StreamHandler()
+handler.setLevel(logging.INFO)
+formatter = TargetLogFormatter(sys.stderr.isatty() and have_smart_terminal())
+handler.setFormatter(formatter)
+logger.addHandler(handler)
 
 ### ERRORS
 
