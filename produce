@@ -542,29 +542,26 @@ class Producer(Thread):
                 recipefile.write(recipe)
                 recipefile.flush()
                 interrupted = False
-                try:
-                    exit = subprocess.call([executable, recipefile.name],
-                            stdin=sys.stdin)
-                except KeyboardInterrupt as e:
-                    interrupted = True
-            if interrupted or exit != 0:
-                # The outputs may have been touched but since the recipe failed,
-                # they probably don't have the right contents now. In order to
-                # prevent future invocations of Produce from treating them as up to
-                # date, we rename them, appending a tilde to the name:
-                if irule['type'] == 'file':
-                    backup_name = target + '~'
-                    logging.debug('renaming %s to %s', target, backup_name)
-                    rename_if_exists(target, backup_name)
-                for output in self.production.target_outputs[target]:
-                    backup_name = output + '~'
-                    logging.debug('renaming %s to %s', output, backup_name)
-                    rename_if_exists(output, backup_name)
-            if interrupted:
-                raise ProduceError('interrupted while executing recipe')
+                # Mark the files we are about to create/update as incomplete
+                # so cleanup deals with them in case of an error:
+                with self.production.fields_lock:
+                    if irule['type'] == 'file':
+                        self.production.incomplete_files.add(target)
+                    for output in self.production.target_outputs[target]:
+                        self.production.incomplete_files.add(output)
+                # Run the recipe:
+                exit = subprocess.call([executable, recipefile.name],
+                        stdin=sys.stdin)
             if exit != 0:
                 raise ProduceError('recipe failed: {}'.format(recipe))
-            # TODO check here if file was created for file rules, raise exception if not?
+            # Files were successfully created/updated and are no longer
+            # incomplete:
+            with self.production.fields_lock:
+                if irule['type'] == 'file':
+                    self.production.incomplete_files.discard(target)
+                for output in self.production.target_outputs[target]:
+                    self.production.incomplete_files.discard(output)
+            # TODO check here if file was created for file rules, raise exception if not?  
     
     def get_result(self):
         """
@@ -605,6 +602,7 @@ class Production:
         self.target_time = {}
         self.out_of_date_targets = set()
         self.missing_targets = set()
+        self.incomplete_files = set()
         # If a recipe for a target fails, store the exception for the benefit
         # of other threads that need the same target. Instead of trying to
         # build it again, they can just raise the existing exception.
@@ -720,24 +718,31 @@ class Production:
         return target in self.missing_targets
 
     def produce(self, targets):
-        # Phase 1: build dependency graph and gather information
-        for target in targets:
-            self.add_target(target, [])
-        # Phase 2: build all we need to build
-        threads = []
-        for target in targets:
-            threads.append(Producer(self, target))
-        for thread in threads:
-            thread.start()
-        for thread in threads:
-            thread.join()
-        if all([not thread.get_result() for thread in threads]):
-            logging.info('all targets are up to date')
-        # Phase 3: repeat phase 1 for the pretend targets, touching files in
-        # order to preserve out-of-dateness
-        self.targets = [] # circumvent add_target's deduplication
-        for target in self.pretend_up_to_date:
-            self.add_target(target, [])
+        try:
+            # Phase 1: build dependency graph and gather information
+            for target in targets:
+                self.add_target(target, [])
+            # Phase 2: build all we need to build
+            threads = []
+            for target in targets:
+                threads.append(Producer(self, target))
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+            if all([not thread.get_result() for thread in threads]):
+                logging.info('all targets are up to date')
+        finally:
+            # Phase 3: rename potentially incomplete files
+            for output in self.incomplete_files:
+                backup_name = output + '~'
+                logging.debug('renaming %s to %s', output, backup_name)
+                rename_if_exists(output, backup_name)
+            # Phase 4: repeat phase 1 for the pretend targets, touching files
+            # in order to preserve out-of-dateness
+            self.targets = [] # circumvent add_target's deduplication
+            for target in self.pretend_up_to_date:
+                self.add_target(target, [])
 
 ### MAIN
 
