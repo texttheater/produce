@@ -163,6 +163,8 @@ def process_commandline(args=None):
             sure that future invocations of Produce will still treat them as
             out of date by increasing the modification times of their changed
             dependencies as necessary""")
+    parser.add_argument('-x', '--expensive', action='store_true', help="""also
+            rebuild targets marked as expensive""")
     parser.add_argument('target', nargs='*', help="""the target(s) to produce
             - if omitted, default target from Producefile is used""")
     return parser.parse_args(args)
@@ -722,6 +724,7 @@ class Production:
             # Phase 1: build dependency graph and gather information
             for target in targets:
                 self.add_target(target, [])
+            # Phase 1.5: check for out-of-date expensive targets
             # Phase 2: build all we need to build
             threads = []
             for target in targets:
