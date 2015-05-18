@@ -163,8 +163,8 @@ def process_commandline(args=None):
             sure that future invocations of Produce will still treat them as
             out of date by increasing the modification times of their changed
             dependencies as necessary""")
-    parser.add_argument('-x', '--expensive', action='store_true', help="""also
-            rebuild targets marked as expensive""")
+    parser.add_argument('-x', '--force-expensive', action='store_true',
+            help="""also rebuild targets marked as expensive""")
     parser.add_argument('target', nargs='*', help="""the target(s) to produce
             - if omitted, default target from Producefile is used""")
     return parser.parse_args(args)
@@ -583,7 +583,7 @@ class Production:
     """
 
     def __init__(self, targets, rules, globes, dry_run, always_build, jobs,
-            pretend_up_to_date, silent):
+            pretend_up_to_date, silent, force_expensive):
         # General properties, passed as arguments to constructor:
         self.rules = rules # maps patterns to key-uninstantiated value maps ("rules")
         self.globes = globes
@@ -591,6 +591,7 @@ class Production:
         self.always_build = always_build
         self.pretend_up_to_date = pretend_up_to_date
         self.silent = silent
+        self.force_expensive = force_expensive
         # Create locks for the building phase:
         self.fields_lock = RLock()
         self.target_lock = defaultdict(RLock)
@@ -604,6 +605,7 @@ class Production:
         self.target_time = {}
         self.out_of_date_targets = set()
         self.missing_targets = set()
+        self.expensive_targets = set()
         self.incomplete_files = set()
         # If a recipe for a target fails, store the exception for the benefit
         # of other threads that need the same target. Instead of trying to
@@ -634,6 +636,8 @@ class Production:
                 raise ProduceError(
                         'cyclic dependency: {}, which has {} as output'.format(
                         ' -> '.join(beam), output))
+        # Determine if expensive:
+        expensive = ast.literal_eval(irule.get('expensive', 'False'))
         # The first direct dependency is the depfile, if any:
         if 'depfile' in irule:
             ddep = irule['depfile']
@@ -697,14 +701,16 @@ class Production:
             touch(self.changed_ddeps[target], now() + 1)
         # Store information about this target:
         self.targets.append(target)
-        self.target_outputs[target] = outputs
         self.target_irule[target] = irule
+        self.target_outputs[target] = outputs
         self.target_ddeps[target] = ddeps
         self.target_time[target] = time
         if out_of_date:
             self.out_of_date_targets.add(target)
         if missing:
             self.missing_targets.add(target)
+        if expensive:
+            self.expensive_targets.add(target)
 
     def detect_changed_ddep(self, target, time, ddeps):
         for ddep in ddeps:
@@ -725,6 +731,14 @@ class Production:
             for target in targets:
                 self.add_target(target, [])
             # Phase 1.5: check for out-of-date expensive targets
+            if not self.force_expensive:
+                danger = (self.out_of_date_targets & self.expensive_targets) - \
+                        self.pretend_up_to_date
+                if danger:
+                    raise ProduceError(('The following targets are out of date '
+                            'and marked as expensive:\n{}\nAvoid rebuilding '
+                            'with -u and/or force rebuilding of expensive '
+                            'targets with -x.').format('\n'.join(danger)))
             # Phase 2: build all we need to build
             threads = []
             for target in targets:
@@ -781,8 +795,8 @@ def produce(args=[]):
         exec(globes.get('prelude', ''), globes)
         # Produce:
         Production(targets, rules, globes, args.dry_run, args.always_build,
-                args.jobs, args.pretend_up_to_date, args.silent).produce(
-                targets)
+                args.jobs, args.pretend_up_to_date, args.silent,
+                args.force_expensive).produce(targets)
     except KeyboardInterrupt as e:
         raise ProduceError('interrupted')
 
