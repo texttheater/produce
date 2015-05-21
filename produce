@@ -440,7 +440,7 @@ class Producer(Thread):
     def run(self):
         try:
             self.result = self.build_if_required()
-        except Exception as e:
+        except Exception as e: #note: does not catch KeyboardInterrupt
             # Here we could store the stacktrace in case we want to inspect it
             # the calling thread, but currently it's not needed.
             self.exception = e
@@ -781,6 +781,8 @@ def produce(args=[]):
                 args.jobs, args.pretend_up_to_date, args.silent).produce(
                 targets)
     except KeyboardInterrupt as e:
+        # FIXME If that happens, we want to kill all processes. _Before_
+        # running the cleanup phase in the finally clause above. How?
         raise ProduceError('interrupted')
 
 if __name__ == '__main__':
