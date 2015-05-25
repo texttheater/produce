@@ -5,6 +5,7 @@ import ast
 import errno
 import logging
 import os
+import queue
 import re
 import shlex
 import shutil
@@ -426,15 +427,17 @@ class Producer(Thread):
 
     """
     A producer is an "actor" in charge of producing a single target. It is a
-    thread to be started, then joined. Afterwards, the get_result method can be
-    used to get the result.
+    thread: you create it, you start it, and when it's done, it will put itself
+    onto the queue that you passed to the constructor. From there you can get
+    it and call get_result to get the result.
     """
 
-    def __init__(self, production, target, depth=0):
+    def __init__(self, production, target, depth=0, queue=None):
         Thread.__init__(self)
         self.production = production
         self.target = target
         self.depth = depth
+        self.queue = queue
         self.exception = None
 
     def run(self):
@@ -444,6 +447,8 @@ class Producer(Thread):
             # Here we could store the stacktrace in case we want to inspect it
             # the calling thread, but currently it's not needed.
             self.exception = e
+        if self.queue is not None:
+            self.queue.put(self)
 
     def build_if_required(self):
         """
@@ -494,15 +499,13 @@ class Producer(Thread):
         if self.target in self.production.pretend_up_to_date:
             return # TODO need to raise error somewhere if target is a file and doesn't exist
         # Build required dependencies in parallel:
-        threads = []
+        q = queue.Queue()
         for ddep in self.production.target_ddeps[self.target]:
-            threads.append(Producer(self.production, ddep, depth=self.depth + 1))
-        for thread in threads:
-            thread.start()
-        for thread in threads:
-            thread.join()
-        for thread in threads:
-            thread.get_result() # in order to propagate any exceptions
+            Producer(self.production, ddep, depth=self.depth + 1, queue=q
+                    ).start()
+        # Wait until all producers are finished:
+        for _ in self.production.target_ddeps[self.target]:
+            q.get().get_result() # get result so exceptions are propagated
         # Run recipe. Semaphore limits number of parallel recipes:
         with self.production.build_sema:
             self._run_recipe()
@@ -730,14 +733,13 @@ class Production:
             for target in targets:
                 self.add_target(target, [])
             # Phase 2: build all we need to build
-            threads = []
+            q = queue.Queue()
             for target in targets:
-                threads.append(Producer(self, target))
-            for thread in threads:
-                thread.start()
-            for thread in threads:
-                thread.join()
-            if all([not thread.get_result() for thread in threads]):
+                Producer(self, target, queue=q).start()
+            all_up_to_date = True
+            for _ in targets:
+                all_up_to_date = q.get().get_result() and all_up_to_date
+            if all_up_to_date:
                 logging.info('all targets are up to date')
         finally:
             # Phase 3: clean up
