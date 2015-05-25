@@ -464,8 +464,9 @@ class Producer(Thread):
                 if not (self.production.is_out_of_date(self.target) or \
                         self.production.is_missing(self.target)):
                     return False
-                # If building the target encountered an exception before, we also
-                # raise it:
+                # If building this target encountered an exception before, we
+                # also raise it, in case this thread is joined earlier than the
+                # one which originally raised it:
                 if self.target in self.production.target_exception:
                     raise self.production.target_exception[self.target]
             # Build the target:
@@ -549,9 +550,13 @@ class Producer(Thread):
                         self.production.incomplete_files.add(target)
                     for output in self.production.target_outputs[target]:
                         self.production.incomplete_files.add(output)
-                # Run the recipe:
-                exit = subprocess.call([executable, recipefile.name],
-                        stdin=sys.stdin)
+                    # Start running the recipe:
+                    process = subprocess.Popen([executable, recipefile.name],
+                            stdin=sys.stdin)
+                    self.production.processes.add(process)
+                # Wait for recipe to finish:
+                exit = process.wait() # TODO add timeout argument, check if
+                # other threads have crashed, if so, raise an exception too
             if exit != 0:
                 raise ProduceError('recipe failed: {}'.format(recipe))
             # Files were successfully created/updated and are no longer
@@ -602,7 +607,9 @@ class Production:
         self.target_time = {}
         self.out_of_date_targets = set()
         self.missing_targets = set()
+        # Initialize fields to store information for cleanup:
         self.incomplete_files = set()
+        self.processes = set()
         # If a recipe for a target fails, store the exception for the benefit
         # of other threads that need the same target. Instead of trying to
         # build it again, they can just raise the existing exception.
@@ -733,7 +740,12 @@ class Production:
             if all([not thread.get_result() for thread in threads]):
                 logging.info('all targets are up to date')
         finally:
-            # Phase 3: rename potentially incomplete files
+            # Phase 3: clean up
+            for process in self.processes:
+                try:
+                    process.kill()
+                except ProcessLookupError:
+                    pass
             for output in self.incomplete_files:
                 backup_name = output + '~'
                 logging.debug('renaming %s to %s', output, backup_name)
