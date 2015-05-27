@@ -738,7 +738,7 @@ class Production:
                 Producer(self, target, queue=q).start()
             all_up_to_date = True
             for _ in targets:
-                all_up_to_date = q.get().get_result() and all_up_to_date
+                all_up_to_date = not q.get().get_result() and all_up_to_date
             if all_up_to_date:
                 logging.info('all targets are up to date')
         finally:
