@@ -643,7 +643,7 @@ class Production:
             if output in beam:
                 raise ProduceError(
                         'cyclic dependency: {}, which has {} as output'.format(
-                        ' -> '.join(beam), output))
+                        ' -> '.join(beam + [target]), output))
         # The first direct dependency is the depfile, if any:
         if 'depfile' in irule:
             ddep = irule['depfile']
