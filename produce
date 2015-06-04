@@ -458,13 +458,21 @@ class Producer(Thread):
         with other Producers that are running concurrently. The core work is
         delegated to _build.
         """
-        outputs = sorted(set(self.production.target_outputs[self.target] + [
-                self.target]))
+        outputs = set(self.production.target_outputs[self.target])
+        lockables = set(outputs)
+        lockables.discard(self.target)
+        if self.production.target_irule[self.target].get('recipe'):
+            lockables.add(self.target)
+        lockables = sorted(lockables)
         with ExitStack() as stack: # TODO ExitStack only in 3.3 and above, can we use something else?
             # Acquire lock for all outputs. Order is important to avoid
             # deadlocks. Release is automatic on leaving the context of stack.
-            for output in outputs:
+            for output in lockables:
+                if self.production.debug >= 2:
+                    logging.info('locking %s', output)
                 stack.enter_context(self.production.target_lock[output])
+                if self.production.debug >= 2:
+                    logging.info('locked %s', output)
             with self.production.fields_lock:
                 # If the target is up-to-date and non-missing, we're done:
                 if not (self.production.is_out_of_date(self.target) or \
@@ -480,11 +488,11 @@ class Producer(Thread):
                 self._build()
             except Exception as e:
                 with self.production.fields_lock:
-                    self.production.target_exception[output] = e
+                    self.production.target_exception[self.target] = e
                 raise e
             # All outputs are now up-to-date and non-missing:
             with self.production.fields_lock:
-                for output in outputs:
+                for output in outputs | set((self.target,)):
                     self.production.out_of_date_targets.discard(output)
                     self.production.missing_targets.discard(output)
             return True
@@ -633,14 +641,23 @@ class Production:
             return
         # Make instantiated rule:
         irule = create_irule(target, self.rules, self.globes)
+        # Store it directly (we need it for spotting harmless soft cycles):
+        self.target_irule[target] = irule
         # Determine outputs:
         if 'outputs' in irule:
             outputs = shlex.split(irule['outputs'])
         else:
             outputs = []
-        # Catch "soft cyclic dependencies":
+        # Catch "soft cyclic dependencies". We don't want to allow a target to
+        # depend on a rule that will produce it as a side output: the target
+        # would be built twice by the same production, which is crazy and
+        # probably indicates a bug. There's an exception though: if the target
+        # has an empty recipe, it may depend on a target that produces the
+        # first target as a side output. This is useful because it allows
+        # dependencies on side outputs: they can then declare which target to
+        # produce to get the side output.
         for output in outputs:
-            if output in beam:
+            if output in beam and self.target_irule[output].get('recipe'):
                 raise ProduceError(
                         'cyclic dependency: {}, which has {} as output'.format(
                         ' -> '.join(beam + [target]), output))
@@ -709,7 +726,6 @@ class Production:
         # Store information about this target:
         self.targets.append(target)
         self.target_outputs[target] = outputs
-        self.target_irule[target] = irule
         self.target_ddeps[target] = ddeps
         self.target_time[target] = time
         if out_of_date:
