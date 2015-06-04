@@ -147,9 +147,9 @@ def process_commandline(args=None):
     parser = argparse.ArgumentParser()
     parser.add_argument('-B', '--always-build', action='store_true',
             help="""Unconditionally build all targets""")
-    parser.add_argument('-d', '--debug', action='count', help="""Print
-            debugging information. Give this option multiple time for more
-            information.""")
+    parser.add_argument('-d', '--debug', action='count', default=0,
+            help="""Print debugging information. Give this option multiple
+            times for more information.""")
     parser.add_argument('-f', '--file', default='produce.ini',
             help="""Use FILE as a Producefile""")
     parser.add_argument('-j', '--jobs', type=int, default=1, help="""Specifies
@@ -590,7 +590,7 @@ class Production:
     """
 
     def __init__(self, targets, rules, globes, dry_run, always_build, jobs,
-            pretend_up_to_date, silent):
+            pretend_up_to_date, silent, debug):
         # General properties, passed as arguments to constructor:
         self.rules = rules # maps patterns to key-uninstantiated value maps ("rules")
         self.globes = globes
@@ -598,6 +598,7 @@ class Production:
         self.always_build = always_build
         self.pretend_up_to_date = pretend_up_to_date
         self.silent = silent
+        self.debug = debug
         # Create locks for the building phase:
         self.fields_lock = RLock()
         self.target_lock = defaultdict(RLock)
@@ -652,7 +653,8 @@ class Production:
             Producer(self, ddep).build_if_required() # TODO do this asynchronously like for normal targets
         # Determine other dependencies and add them recursively:
         ddeps = list_ddeps(irule)
-        logging.debug('%s <- %s', target, ddeps)
+        if self.debug >= 1:
+            logging.info('%s <- %s', target, ddeps)
         for ddep in ddeps:
             self.add_target(ddep, beam + [target])
         if ddeps:
@@ -763,7 +765,7 @@ class Production:
 
 def produce(args=[]):
     args = process_commandline(args)
-    if args.debug:
+    if args.debug > 1:
         level = logging.DEBUG
     else:
         level = logging.INFO
@@ -793,8 +795,8 @@ def produce(args=[]):
         exec(globes.get('prelude', ''), globes)
         # Produce:
         Production(targets, rules, globes, args.dry_run, args.always_build,
-                args.jobs, args.pretend_up_to_date, args.silent).produce(
-                targets)
+                args.jobs, args.pretend_up_to_date, args.silent, args.debug
+                ).produce(targets)
     except KeyboardInterrupt as e:
         # FIXME If that happens, we want to kill all processes. _Before_
         # running the cleanup phase in the finally clause above. How?
