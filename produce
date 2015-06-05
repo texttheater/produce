@@ -444,7 +444,7 @@ class Producer(Thread):
     def run(self):
         try:
             self.result = self.build_if_required()
-        except Exception as e: #note: does not catch KeyboardInterrupt
+        except Exception as e: # note: does not catch KeyboardInterrupt
             # Here we could store the stacktrace in case we want to inspect it
             # the calling thread, but currently it's not needed.
             self.exception = e
@@ -458,21 +458,24 @@ class Producer(Thread):
         with other Producers that are running concurrently. The core work is
         delegated to _build.
         """
+        # We lock all side outputs. We also lock the target iff we have a
+        # recipe for it:
         outputs = set(self.production.target_outputs[self.target])
         lockables = set(outputs)
         lockables.discard(self.target)
         if self.production.target_irule[self.target].get('recipe'):
             lockables.add(self.target)
-        lockables = sorted(lockables)
+        lockables = sorted(lockables) # sort to prevent deadlock
         with ExitStack() as stack: # TODO ExitStack only in 3.3 and above, can we use something else?
-            # Acquire lock for all outputs. Order is important to avoid
-            # deadlocks. Release is automatic on leaving the context of stack.
-            for output in lockables:
+            # Acquire locks. Release is automatic on leaving the context of
+            # stack.
+            for lockable in lockables:
                 if self.production.debug >= 2:
-                    logging.info('locking %s', output)
-                stack.enter_context(self.production.target_lock[output])
+                    logging.info('locking %s', lockable)
+                stack.enter_context(self.production.target_lock[lockable])
                 if self.production.debug >= 2:
-                    logging.info('locked %s', output)
+                    logging.info('locked %s', lockable)
+            # Check if the target still needs to be built:
             with self.production.fields_lock:
                 # If the target is up-to-date and non-missing, we're done:
                 if not (self.production.is_out_of_date(self.target) or \
@@ -495,7 +498,7 @@ class Producer(Thread):
                 for output in outputs | set((self.target,)):
                     self.production.out_of_date_targets.discard(output)
                     self.production.missing_targets.discard(output)
-            return True
+        return True
 
     def _build(self):
         """
