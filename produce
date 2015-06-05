@@ -444,9 +444,12 @@ class Producer(Thread):
     def run(self):
         try:
             self.result = self.build_if_required()
-        except Exception as e: # note: does not catch KeyboardInterrupt
-            # Here we could store the stacktrace in case we want to inspect it
-            # the calling thread, but currently it's not needed.
+        # Catch exceptions and store them for when the calling thread tries to
+        # get the result. We could store the stacktrace, too, but currently
+        # it's not needed.
+        except KeyboardInterrupt as e:
+            self.exception = e
+        except Exception as e:
             self.exception = e
         if self.queue is not None:
             self.queue.put(self)
@@ -557,7 +560,6 @@ class Producer(Thread):
             with NamedTemporaryFile(mode='w') as recipefile:
                 recipefile.write(recipe)
                 recipefile.flush()
-                interrupted = False
                 # Mark the files we are about to create/update as incomplete
                 # so cleanup deals with them in case of an error:
                 with self.production.fields_lock:
@@ -570,8 +572,7 @@ class Producer(Thread):
                             stdin=sys.stdin)
                     self.production.processes.add(process)
                 # Wait for recipe to finish:
-                exit = process.wait() # TODO add timeout argument, check if
-                # other threads have crashed, if so, raise an exception too
+                exit = process.wait()
             if exit != 0:
                 raise ProduceError('recipe failed: {}'.format(recipe))
             # Files were successfully created/updated and are no longer
@@ -791,35 +792,30 @@ def produce(args=[]):
     logging.basicConfig(format='%(levelname)s: %(message)s',
             level=level)
     try:
-        try:
-            with open(args.file) as f:
-               sections = list(parse_inifile(f))
-               logging.debug('parsed sections: %s', sections)
-               raw_globes, rules = interpret_sections(sections)
-        except IOError as e:
-            raise ProduceError('cannot read file {}'.format(args.file), e)
-        globes = {}
-        for att, val in raw_globes.items():
-            globes[att] = interpolate(val, globes)
-        # Determine targets:
-        targets = args.target
-        if not targets:
-            if 'default' in globes:
-                targets = shlex.split(globes['default'])
-            else:
-                raise ProduceError('Don\'t know what to produce. Specify a ' +
-                        'target on the command line or a default target in ' +
-                        'produce.ini.')
-        # Execute prelude, with globes providing the name context:
-        exec(globes.get('prelude', ''), globes)
-        # Produce:
-        Production(targets, rules, globes, args.dry_run, args.always_build,
-                args.jobs, args.pretend_up_to_date, args.silent, args.debug
-                ).produce(targets)
-    except KeyboardInterrupt as e:
-        # FIXME If that happens, we want to kill all processes. _Before_
-        # running the cleanup phase in the finally clause above. How?
-        raise ProduceError('interrupted')
+        with open(args.file) as f:
+           sections = list(parse_inifile(f))
+           logging.debug('parsed sections: %s', sections)
+           raw_globes, rules = interpret_sections(sections)
+    except IOError as e:
+        raise ProduceError('cannot read file {}'.format(args.file), e)
+    globes = {}
+    for att, val in raw_globes.items():
+        globes[att] = interpolate(val, globes)
+    # Determine targets:
+    targets = args.target
+    if not targets:
+        if 'default' in globes:
+            targets = shlex.split(globes['default'])
+        else:
+            raise ProduceError('Don\'t know what to produce. Specify a ' +
+                    'target on the command line or a default target in ' +
+                    'produce.ini.')
+    # Execute prelude, with globes providing the name context:
+    exec(globes.get('prelude', ''), globes)
+    # Produce:
+    Production(targets, rules, globes, args.dry_run, args.always_build,
+            args.jobs, args.pretend_up_to_date, args.silent, args.debug
+            ).produce(targets)
 
 if __name__ == '__main__':
     try:
