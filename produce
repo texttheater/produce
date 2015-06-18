@@ -41,15 +41,6 @@ def have_smart_terminal():
     # courtesy of apenwarr's redo
     return (os.environ.get('TERM') or 'dumb') != 'dumb'
 
-def dedup(seq):
-    """
-    Deduplicates a sequence - courtesy of
-    http://www.peterbe.com/plog/uniqifiers-benchmark
-    """
-    seen = set()
-    seen_add = seen.add
-    return [x for x in seq if not x in seen and not seen_add(x)]
-
 def mtime(path, default=0):
     """
     Returns the mtime of the file at the specified path. Returns default if
