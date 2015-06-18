@@ -74,8 +74,8 @@ def rename_if_exists(src, dst):
         if e.errno != errno.ENOENT:
             raise e
 
-def touch(path):
-    if subprocess.call(['touch', path]) != 0:
+def touch(path, timestamp):
+    if subprocess.call(['touch', '-d', '@{}'.format(timestamp), path]) != 0:
         raise ProduceError('failed to touch {}'.format(path))
 
 def shlex_join(value):
