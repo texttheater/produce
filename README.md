@@ -630,7 +630,7 @@ special meaning to Produce:
     i.e. that the target given by the value must be made up to date before the
     recipe of this rule can be run. Also see
     <a href="#named-and-unnamed-dependencies">Named an unnamed depenencies</a>.</dd>
-    <dt>deps</dt>
+    <dt><code>deps</code></dt>
     <dd>Like <code>dep.*</code>, but allows for specifying multiple unnamed dependencies
     in one attribute value. The format is roughly a space-separated list. For
     details, see
