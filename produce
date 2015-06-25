@@ -748,9 +748,14 @@ class Production:
     def produce(self, targets):
         try:
             # Phase 1: build dependency graph and gather information
+            # TODO We could probably already start building each target as soon
+            # as it's added. Advantages: more elegant, dependency files could
+            # be built concurrently.
             for target in targets:
                 self.add_target(target, [])
             # Phase 2: build all we need to build
+            # TODO Here we'd then not run the producers, just wait for them to
+            # finish. How? Via centrally kept queues?
             q = queue.Queue()
             for target in targets:
                 Producer(self, target, queue=q).start()
