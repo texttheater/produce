@@ -452,18 +452,20 @@ class Producer(Thread):
     def build_if_required(self):
         """
         (Re)builds the target of this producer unless it is already up to date.
-        This method is mainly for checking up-to-dateness and co-ordinating
+        This method is mainly for up-to-dateness bookkeeping and co-ordinating
         with other Producers that are running concurrently. The core work is
         delegated to _build.
         """
-        # We lock all side outputs. We also lock the target iff we have a
-        # recipe for it:
+        # We lock all side outputs.
         outputs = set(self.production.target_outputs[self.target])
         lockables = set(outputs)
-        lockables.discard(self.target)
+        # We also lock the target iff we have a recipe for it:
         if self.production.target_irule[self.target].get('recipe'):
             lockables.add(self.target)
-        lockables = sorted(lockables) # sort to prevent deadlock
+        else:
+            lockables.discard(self.target) # in case it's in outputs
+        # Sort lockables to prevent deadlocks:
+        lockables = sorted(lockables)
         with ExitStack() as stack: # TODO ExitStack only in 3.3 and above, can we use something else?
             # Acquire locks. Release is automatic on leaving the context of
             # stack.
@@ -491,7 +493,7 @@ class Producer(Thread):
                 with self.production.fields_lock:
                     self.production.target_exception[self.target] = e
                 raise e
-            # All outputs are now up-to-date and non-missing:
+            # Mark all outputs as now up-to-date and non-missing:
             with self.production.fields_lock:
                 for output in outputs | set((self.target,)):
                     self.production.out_of_date_targets.discard(output)
