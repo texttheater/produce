@@ -9,6 +9,7 @@ import queue
 import re
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -748,6 +749,11 @@ class Production:
         return target in self.missing_targets
 
     def produce(self, targets):
+        def handle_signal(signum, frame):
+            raise ProduceError('received signal')
+        old_handler = signal.signal(signal.SIGTERM, handle_signal)
+        if old_handler is None:
+            old_handler = signal.SIG_DFL
         try:
             # Phase 1: build dependency graph and gather information
             # TODO We could probably already start building each target as soon
@@ -767,6 +773,7 @@ class Production:
             if all_up_to_date:
                 logging.info('all targets are up to date')
         finally:
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
             # Phase 3: clean up
             for process in self.processes:
                 try:
@@ -782,6 +789,7 @@ class Production:
             self.targets = [] # circumvent add_target's deduplication
             for target in self.pretend_up_to_date:
                 self.add_target(target, [])
+            signal.signal(signal.SIGTERM, old_handler)
 
 ### MAIN
 
