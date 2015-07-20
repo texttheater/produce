@@ -600,6 +600,7 @@ class Producer(Thread):
                 for output in self.production.target_outputs[target]:
                     self.production.incomplete_files.discard(output)
             # TODO check here if file was created for file rules, raise exception if not?  
+        target_info('completed', target, self.depth)
     
     def get_result(self):
         """
