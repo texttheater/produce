@@ -82,8 +82,24 @@ def touch(path, timestamp):
 def shlex_join(value):
     return ' '.join((shlex.quote(str(x)) for x in value))
 
-### CUSTOMIZED LOGGING
-# It's a pain in the neck in Python.
+### LOGGING
+# Produce aims to communicate with the user in an inuitive and flexible way.
+# Reconciling these aims with Python's logging facilities is an ongoing battle.
+# The current code is terribly ugly, but at least the ugliness is now mostly
+# contained within this section.
+
+def set_up_logging(dbglvl):
+    global debug_level
+    debug_level = dbglvl
+    if debug_level > 1:
+        level = logging.DEBUG
+    else:
+        level = logging.INFO
+    logging.basicConfig(format='%(levelname)s: %(message)s', level=level)
+
+def debug(level, message_format, *parameters):
+    if debug_level >= level:
+        logging.debug(message_format, *parameters)
 
 class TargetLogMessage():
 
@@ -120,14 +136,19 @@ class TargetLogFormatter(logging.Formatter):
         else:
             return logging.Formatter.format(self, record)
 
-logger = logging.getLogger('produce')
-logger.propagate = False
-logger.setLevel(logging.INFO)
+# TODO Should we do this in setup_logging?
+target_logger = logging.getLogger('produce')
+target_logger.propagate = False
+target_logger.setLevel(logging.INFO)
 handler = logging.StreamHandler()
 handler.setLevel(logging.INFO)
 formatter = TargetLogFormatter(sys.stderr.isatty() and have_smart_terminal())
 handler.setFormatter(formatter)
-logger.addHandler(handler)
+target_logger.addHandler(handler)
+
+def target_info(message, target, depth):
+    global target_logger
+    target_logger.info(TargetLogMessage(message, target, depth))
 
 ### ERRORS
 
@@ -238,9 +259,8 @@ def interpret_sections(sections):
 
 ### PATTERN MATCHING AND INTERPOLATION
 
-def interpolate(string, varz, ignore_undefined=False,
-        keep_escaped=False):
-    logging.debug('interpolate called with varz: %s', {k: v for (k, v) in
+def interpolate(string, varz, ignore_undefined=False, keep_escaped=False):
+    debug(3, 'interpolate called with varz: %s', {k: v for (k, v) in
             varz.items() if k != '__builtins__'})
     original_string = string
     result = ''
@@ -259,15 +279,14 @@ def interpolate(string, varz, ignore_undefined=False,
             start = 2
             error = None
             while '}' in string[start:]:
-                logging.debug('looking for } in %s, starting at %s', string,
-                        start)
+                debug(3, 'looking for } in %s, starting at %s', string, start)
                 index = string.index('}', start)
                 # Add parentheses so users don't need to add them for sequence
                 # expressions:
                 expression = '(' + string[2:index] + ')'
                 try:
                     value = eval(expression, varz)
-                    logging.debug('interpolating %s into %s', expression, value)
+                    debug(3, 'interpolating %s into %s', expression, value)
                     result += value_to_string(value)
                     string = string[index + 1:]
                     break
@@ -318,8 +337,7 @@ def section_name_to_regex(name, globes={}):
         return produce_pattern_to_regex(name, globes)
 
 def produce_pattern_to_regex(pattern, globes={}):
-    ip = interpolate(pattern, globes, ignore_undefined=True,
-            keep_escaped=True)
+    ip = interpolate(pattern, globes, ignore_undefined=True, keep_escaped=True)
     regex = ''
     while ip:
         if ip.startswith('%%'):
@@ -338,7 +356,7 @@ def produce_pattern_to_regex(pattern, globes={}):
             regex += re.escape(ip[:1])
             ip = ip[1:]
     regex += '$' # re.match doesn't enforce reaching the end by itself
-    logging.debug('generated regex: %s', regex)
+    debug(3, 'generated regex: %s', regex)
     return re.compile(regex)
 
 ### INSTANTIATED RULES
@@ -380,19 +398,19 @@ def create_irule(target, rules, globes):
                     break
             # If there is a condition and it isn't met, go to the next rule:
             if 'cond' in result and not ast.literal_eval(result['cond']):
-                logging.debug('condition %s failed, trying next rule', result['cond'])
+                debug(3, 'condition %s failed, trying next rule',
+                        result['cond'])
                 continue
-            logging.debug('instantiated rule for target %s has varz: %s',
-                    target, {k: v for (k, v) in varz.items() if k !=
-                    '__builtins__'})
+            debug(3, 'instantiated rule for target %s has varz: %s', target,
+                    {k: v for (k, v) in varz.items() if k != '__builtins__'})
             result['type'] = result.get('type', 'file')
-            logging.debug('target type: %s', result['type'])
+            debug(3, 'target type: %s', result['type'])
             if result['type'] not in ('file', 'task'):
                 raise ProduceError('unknown type {} for target {}'.format(
                     target_type, target))
             return result
         else:
-            logging.debug('pattern %s did not match, trying next rule', pattern)
+            debug(3, 'pattern %s did not match, trying next rule', pattern)
     if os.path.exists(target):
         # Although there is no rule to make the target, the target is a file
         # that exists, so we can use it as an ingredient.
@@ -471,11 +489,9 @@ class Producer(Thread):
             # Acquire locks. Release is automatic on leaving the context of
             # stack.
             for lockable in lockables:
-                if self.production.debug >= 2:
-                    logging.info('locking %s', lockable)
+                debug(3, 'locking %s', lockable)
                 stack.enter_context(self.production.target_lock[lockable])
-                if self.production.debug >= 2:
-                    logging.info('locked %s', lockable)
+                debug(3, 'locked %s', lockable)
             # Check if the target still needs to be built:
             with self.production.fields_lock:
                 # If the target is up-to-date and non-missing, we're done:
@@ -533,19 +549,17 @@ class Producer(Thread):
             return
         target = irule['target']
         if irule['type'] == 'task':
-            logger.info(TargetLogMessage('running task', target, self.depth))
+            target_info('running task', target, self.depth)
         else:
             if os.path.exists(target):
-                logger.info(TargetLogMessage('rebuilding file', target,
-                        self.depth))
+                target_info('rebuilding file', target, self.depth)
             else:
-                logger.info(TargetLogMessage('building file', target,
-                        self.depth))
+                target_info('building file', target, self.depth)
         recipe = irule['recipe']
         executable = irule.get('shell', 'bash')
         if recipe.startswith('\n'):
             recipe = recipe[1:]
-        if not self.production.silent:
+        if debug_level >= 1:
             print(recipe)
         if not self.production.dry_run:
             # Remove old backup files, if any:
@@ -571,6 +585,7 @@ class Producer(Thread):
                     self.production.processes.add(process)
                 # Wait for recipe to finish:
                 exit = process.wait()
+                debug(3, 'Exit code: %s', exit)
             if exit != 0:
                 raise ProduceError('recipe failed: {}'.format(recipe))
             # Files were successfully created/updated and are no longer
@@ -600,7 +615,7 @@ class Production:
     """
 
     def __init__(self, targets, rules, globes, dry_run, always_build, jobs,
-            pretend_up_to_date, silent, debug):
+            pretend_up_to_date, silent):
         # General properties, passed as arguments to constructor:
         self.rules = rules # maps patterns to key-uninstantiated value maps ("rules")
         self.globes = globes
@@ -608,11 +623,10 @@ class Production:
         self.always_build = always_build
         self.pretend_up_to_date = pretend_up_to_date
         self.silent = silent
-        self.debug = debug
         # Create locks for the building phase:
         self.fields_lock = RLock()
         self.target_lock = defaultdict(RLock)
-        logging.debug('using up to %s threads', jobs)
+        debug(3, 'using up to %s threads', jobs)
         self.build_sema = BoundedSemaphore(jobs)
         # Initialize fields to store information about individual targets:
         self.targets = []
@@ -672,8 +686,7 @@ class Production:
             Producer(self, ddep).build_if_required() # TODO do this asynchronously like for normal targets
         # Determine other dependencies and add them recursively:
         ddeps = list_ddeps(irule)
-        if self.debug >= 1:
-            logging.info('%s <- %s', target, ddeps)
+        debug(2, '%s <- %s', target, ddeps)
         for ddep in ddeps:
             self.add_target(ddep, beam + [target])
         if ddeps:
@@ -685,15 +698,15 @@ class Production:
         if target_type == 'task':
             missing = False
             time = 0
-            logging.debug('%s is a task', target)
+            debug(3, '%s is a task', target)
         else:
             missing = not os.path.exists(target)
             if missing:
                 time = max_ddep_time
             else:
                 time = mtime(target, 0)
-                logging.debug('%s time: %s', target, time)
-        logging.debug('%s missing? %s', target, missing)
+                debug(3, '%s time: %s', target, time)
+        debug(3, '%s missing? %s', target, missing)
         # Determine whether target is out of date, based on information about
         # dependencies, all of which are at this point guaranteed to have been
         # added:
@@ -703,13 +716,13 @@ class Production:
         # 3. If any dependency is out of date, so is the target.
         # 4. Consider it out of date if the always_build option is True.
         if self.always_build:
-            logging.debug('%s is out of date because -B', target)
+            debug(2, '%s is out of date because -B', target)
         out_of_date = target_type == 'task' \
                 or any([(ddep not in self.pretend_up_to_date and \
                 self.is_out_of_date(ddep)) for ddep in ddeps]) \
                 or self.detect_changed_ddep(target, time, ddeps) \
                 or self.always_build
-        logging.debug('%s out of date? %s', target, out_of_date)
+        debug(2, '%s out of date? %s', target, out_of_date)
         # If we did not detect the target to be out of date but we remember it
         # is, caused by some specific newer direct dependency, we need to
         # rectify the situation by touching that dependency, thereby making it
@@ -782,7 +795,7 @@ class Production:
                     pass
             for output in self.incomplete_files:
                 backup_name = output + '~'
-                logging.debug('renaming %s to %s', output, backup_name)
+                debug(2, 'renaming %s to %s', output, backup_name)
                 rename_if_exists(output, backup_name)
             # Phase 4: repeat phase 1 for the pretend targets, touching files
             # in order to preserve out-of-dateness
@@ -795,16 +808,11 @@ class Production:
 
 def produce(args=[]):
     args = process_commandline(args)
-    if args.debug > 1:
-        level = logging.DEBUG
-    else:
-        level = logging.INFO
-    logging.basicConfig(format='%(levelname)s: %(message)s',
-            level=level)
+    set_up_logging(args.debug)
     try:
         with open(args.file) as f:
            sections = list(parse_inifile(f))
-           logging.debug('parsed sections: %s', sections)
+           debug(3, 'parsed sections: %s', sections)
            raw_globes, rules = interpret_sections(sections)
     except IOError as e:
         raise ProduceError('cannot read file {}'.format(args.file), e)
@@ -824,8 +832,7 @@ def produce(args=[]):
     exec(globes.get('prelude', ''), globes)
     # Produce:
     Production(targets, rules, globes, args.dry_run, args.always_build,
-            args.jobs, args.pretend_up_to_date, args.silent, args.debug
-            ).produce(targets)
+            args.jobs, args.pretend_up_to_date, args.silent).produce(targets)
 
 if __name__ == '__main__':
     try:
