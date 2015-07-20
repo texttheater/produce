@@ -130,7 +130,11 @@ class TargetLogFormatter(logging.Formatter):
 
     def format(self, record):
         if isinstance(record.msg, TargetLogMessage):
-            return '{}{}{}{}{}{}{}'.format(self.green, record.msg.action,
+            if record.levelno == logging.ERROR:
+                color = self.red
+            else:
+                color = self.green
+            return '{}{}{}{}{}{}{}'.format(color, record.msg.action,
                     ' ' * (16 - len(record.msg.action)), self.bold,
                     ' ' * record.msg.depth, record.msg.target, self.plain)
         else:
