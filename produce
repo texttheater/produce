@@ -88,7 +88,12 @@ def shlex_join(value):
 # The current code is terribly ugly, but at least the ugliness is now mostly
 # contained within this section.
 
+target_logger = logging.getLogger('produce')
+target_logger.propagate = False
+logging_is_set_up = False
+
 def set_up_logging(dbglvl):
+    # Ordinary logging:
     global debug_level
     debug_level = dbglvl
     if debug_level > 1:
@@ -96,6 +101,20 @@ def set_up_logging(dbglvl):
     else:
         level = logging.INFO
     logging.basicConfig(format='%(levelname)s: %(message)s', level=level)
+    # Target log messages:
+    global logging_is_set_up
+    if logging_is_set_up:
+        return
+    logging_is_set_up = True
+    global target_logger
+    target_logger.handlers = []
+    target_logger.setLevel(logging.INFO)
+    handler = logging.StreamHandler()
+    handler.setLevel(logging.INFO)
+    formatter = TargetLogFormatter(sys.stderr.isatty() and have_smart_terminal())
+    handler.setFormatter(formatter)
+    target_logger.addHandler(handler)
+
 
 def debug(level, message_format, *parameters):
     if debug_level >= level:
@@ -139,16 +158,6 @@ class TargetLogFormatter(logging.Formatter):
                     ' ' * record.msg.depth, record.msg.target, self.plain)
         else:
             return logging.Formatter.format(self, record)
-
-# TODO Should we do this in setup_logging?
-target_logger = logging.getLogger('produce')
-target_logger.propagate = False
-target_logger.setLevel(logging.INFO)
-handler = logging.StreamHandler()
-handler.setLevel(logging.INFO)
-formatter = TargetLogFormatter(sys.stderr.isatty() and have_smart_terminal())
-handler.setFormatter(formatter)
-target_logger.addHandler(handler)
 
 def target_info(message, target, depth):
     global target_logger
