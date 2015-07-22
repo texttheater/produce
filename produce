@@ -539,34 +539,12 @@ class Producer(Thread):
         If it has been decided that a target is out of date, this is the
         method that (re)builds it, unless we use the -u feature and pretend the
         target is up to date. As a prerequisite, the method first makes sure
-        all direct dependencies are up to date by spawning and joining
-        corresponding Producers.
+        all direct dependencies are up to date by recursively calling _produce.
         """
         if self.target in self.production.pretend_up_to_date:
             return # TODO need to raise error somewhere if target is a file and doesn't exist
-        # Build required dependencies in parallel:
-        q = queue.Queue()
-        producers = []
-        for ddep in self.production.target_ddeps[self.target]:
-            producer = Producer(self.production, ddep, depth=self.depth + 1,
-                    queue=q)
-            producer.start()
-            producers.append(producer)
-        # Let all producers finish. If one raises an exception, we induce
-        # controlled shutdown in all others.
-        exception = None
-        for _ in self.production.target_ddeps[self.target]:
-            if exception:
-                q.get()
-            else:
-                try:
-                    q.get().get_result() # get result so exceptions are propagated
-                except (Exception, KeyboardInterrupt) as e:
-                    exception = e
-                    for producer in producers:
-                        producer.kill()
-        if exception:
-            raise exception
+        # Make sure dependencies are up to date:
+        self.production._produce(self.production.target_ddeps[self.target])
         # Run recipe. Semaphore limits number of parallel recipes:
         with self.production.build_sema:
             self._run_recipe()
@@ -803,7 +781,46 @@ class Production:
     def is_missing(self, target):
         return target in self.missing_targets
 
+    def _produce(self, targets):
+        """
+        Internally used method for producing a list of targets. Returns True if
+        something needed to be done, False if all targets were already up to
+        date.
+        """
+        # Build requested targets in parallel:
+        producers = []
+        q = queue.Queue()
+        for target in targets:
+            producer = Producer(self, target, depth=0, queue=q)
+            producer.start()
+            producers.append(producer)
+        # Let all producers finish. If one raises an exception, we induce
+        # controlled shutdown in (kill) all others.
+        exception = None
+        all_up_to_date = True
+        for _ in targets:
+            if exception:
+                q.get()
+            else:
+                try:
+                    all_up_to_date = not q.get().get_result() and \
+                            all_up_to_date
+                except (Exception, KeyboardInterrupt) as e:
+                    exception = e
+                    debug(2, 'killing producers because of {}', e)
+                    for producer in producers:
+                        producer.kill()
+        # Propagate exception, if any:
+        if exception:
+            raise exception
+        # Return whether anything was done:
+        return not all_up_to_date
+
     def produce(self, targets):
+        """
+        After adding all targets, call this method to produce them. High-level
+        method responsible for error handling and clean aborts.
+        """
         def handle_signal(signum, frame):
             raise ProduceError('received signal')
         old_handler = signal.signal(signal.SIGTERM, handle_signal)
@@ -819,34 +836,7 @@ class Production:
             # Phase 2: build all we need to build
             # TODO Here we'd then not run the producers, just wait for them to
             # finish. How? Via centrally kept queues?
-            # TODO Much of the following code is duplicated from _build,
-            # refactor that.
-            # Build requested targets in parallel:
-            producers = []
-            q = queue.Queue()
-            for target in targets:
-                producer = Producer(self, target, depth=0, queue=q)
-                producer.start()
-                producers.append(producer)
-            # Let all producers finish. If one raises an exception, we induce
-            # controlled shutdown in (kill) all others.
-            exception = None
-            all_up_to_date = True
-            for _ in targets:
-                if exception:
-                    q.get()
-                else:
-                    try:
-                        all_up_to_date = not q.get().get_result() and \
-                                all_up_to_date
-                    except (Exception, KeyboardInterrupt) as e:
-                        exception = e
-                        debug(2, 'killing producers because of {}', e)
-                        for producer in producers:
-                            producer.kill()
-            if exception:
-                raise exception
-            if all_up_to_date:
+            if not self._produce(targets):
                 logging.info('all targets are up to date')
         finally:
             # Phase 3: repeat phase 1 for the pretend targets, touching files
