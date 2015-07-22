@@ -14,5 +14,6 @@ class DudedepErrorTest(prodtest.ProduceTestCase):
         with self.assertLogs(logger='produce', level='INFO') as l:
             with self.assertRaises(produce.ProduceError):
                 self.produce()
-        self.assertEqual(len(l.output), 1) # for b, which fails
+        levels = [record.levelno for record in l.records]
+        self.assertEqual(levels, [logging.INFO, logging.ERROR]) # for b, which fails
         self.assertDirectoryContents(['produce.ini'])

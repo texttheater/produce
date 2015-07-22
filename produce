@@ -163,6 +163,10 @@ def target_info(message, target, depth):
     global target_logger
     target_logger.info(TargetLogMessage(message, target, depth))
 
+def target_error(message, target, depth):
+    global target_logger
+    target_logger.error(TargetLogMessage(message, target, depth))
+
 ### ERRORS
 
 class ProduceError(Exception):
@@ -467,6 +471,7 @@ class Producer(Thread):
         self.depth = depth
         self.queue = queue
         self.exception = None
+        self.killed = False
 
     def run(self):
         try:
@@ -542,12 +547,27 @@ class Producer(Thread):
             return # TODO need to raise error somewhere if target is a file and doesn't exist
         # Build required dependencies in parallel:
         q = queue.Queue()
+        producers = []
         for ddep in self.production.target_ddeps[self.target]:
-            Producer(self.production, ddep, depth=self.depth + 1, queue=q
-                    ).start()
-        # Wait until all producers are finished:
+            producer = Producer(self.production, ddep, depth=self.depth + 1,
+                    queue=q)
+            producer.start()
+            producers.append(producer)
+        # Let all producers finish. If one raises an exception, we induce
+        # controlled shutdown in all others.
+        exception = None
         for _ in self.production.target_ddeps[self.target]:
-            q.get().get_result() # get result so exceptions are propagated
+            if exception:
+                q.get()
+            else:
+                try:
+                    q.get().get_result() # get result so exceptions are propagated
+                except (Exception, KeyboardInterrupt) as e:
+                    exception = e
+                    for producer in producers:
+                        producer.kill()
+        if exception:
+            raise exception
         # Run recipe. Semaphore limits number of parallel recipes:
         with self.production.build_sema:
             self._run_recipe()
@@ -582,34 +602,46 @@ class Producer(Thread):
             for output in self.production.target_outputs[target]:
                 backup_name = output + '~'
                 remove_if_exists(backup_name)
-            with NamedTemporaryFile(mode='w') as recipefile:
-                recipefile.write(recipe)
-                recipefile.flush()
-                # Mark the files we are about to create/update as incomplete
-                # so cleanup deals with them in case of an error:
-                with self.production.fields_lock:
+            success = False
+            try:
+                with NamedTemporaryFile(mode='w') as recipefile:
+                    recipefile.write(recipe)
+                    recipefile.flush()
+                    with self.production.fields_lock:
+                        # Start running the recipe:
+                        process = subprocess.Popen([executable,
+                            recipefile.name], stdin=sys.stdin)
+                    # Wait for recipe to finish:
+                    exit = None
+                    while exit is None:
+                        try:
+                            exit = process.wait(timeout=0.05)
+                        except subprocess.TimeoutExpired:
+                            if self.killed:
+                                process.kill()
+                                raise ProduceError('recipe killed: {}'.format(
+                                        recipe))
+                    debug(3, 'Exit code: %s', exit)
+                if exit != 0:
+                    raise ProduceError('recipe failed: {}'.format(recipe))
+                success = True
+                # TODO check here if file was created for file rules, raise
+                # exception if not?
+            finally:
+                if not success:
                     if irule['type'] == 'file':
-                        self.production.incomplete_files.add(target)
+                        backup_name = target + '~'
+                        debug(2, 'renaming %s to %s', target, backup_name)
+                        rename_if_exists(target, backup_name)
                     for output in self.production.target_outputs[target]:
-                        self.production.incomplete_files.add(output)
-                    # Start running the recipe:
-                    process = subprocess.Popen([executable, recipefile.name],
-                            stdin=sys.stdin)
-                    self.production.processes.add(process)
-                # Wait for recipe to finish:
-                exit = process.wait()
-                debug(3, 'Exit code: %s', exit)
-            if exit != 0:
-                raise ProduceError('recipe failed: {}'.format(recipe))
-            # Files were successfully created/updated and are no longer
-            # incomplete:
-            with self.production.fields_lock:
-                if irule['type'] == 'file':
-                    self.production.incomplete_files.discard(target)
-                for output in self.production.target_outputs[target]:
-                    self.production.incomplete_files.discard(output)
-            # TODO check here if file was created for file rules, raise exception if not?  
+                        backup_name = output + '~'
+                        debug(2, 'renaming %s to %s', output, backup_name)
+                        rename_if_exists(output, backup_name)
+                    target_error('incomplete', target, self.depth)
         target_info('completed', target, self.depth)
+
+    def kill(self):
+        self.killed = True
     
     def get_result(self):
         """
@@ -650,9 +682,6 @@ class Production:
         self.target_time = {}
         self.out_of_date_targets = set()
         self.missing_targets = set()
-        # Initialize fields to store information for cleanup:
-        self.incomplete_files = set()
-        self.processes = set()
         # If a recipe for a target fails, store the exception for the benefit
         # of other threads that need the same target. Instead of trying to
         # build it again, they can just raise the existing exception.
@@ -791,27 +820,37 @@ class Production:
             # Phase 2: build all we need to build
             # TODO Here we'd then not run the producers, just wait for them to
             # finish. How? Via centrally kept queues?
+            # TODO Much of the following code is duplicated from _build,
+            # refactor that.
+            # Build requested targets in parallel:
+            producers = []
             q = queue.Queue()
             for target in targets:
-                Producer(self, target, queue=q).start()
+                producer = Producer(self, target, depth=0, queue=q)
+                producer.start()
+                producers.append(producer)
+            # Let all producers finish. If one raises an exception, we induce
+            # controlled shutdown in (kill) all others.
+            exception = None
             all_up_to_date = True
             for _ in targets:
-                all_up_to_date = not q.get().get_result() and all_up_to_date
+                if exception:
+                    q.get()
+                else:
+                    try:
+                        all_up_to_date = not q.get().get_result() and \
+                                all_up_to_date
+                    except (Exception, KeyboardInterrupt) as e:
+                        exception = e
+                        debug(2, 'killing producers because of {}', e)
+                        for producer in producers:
+                            producer.kill()
+            if exception:
+                raise exception
             if all_up_to_date:
                 logging.info('all targets are up to date')
         finally:
-            signal.signal(signal.SIGTERM, signal.SIG_IGN)
-            # Phase 3: clean up
-            for process in self.processes:
-                try:
-                    process.kill()
-                except ProcessLookupError:
-                    pass
-            for output in self.incomplete_files:
-                backup_name = output + '~'
-                debug(2, 'renaming %s to %s', output, backup_name)
-                rename_if_exists(output, backup_name)
-            # Phase 4: repeat phase 1 for the pretend targets, touching files
+            # Phase 3: repeat phase 1 for the pretend targets, touching files
             # in order to preserve out-of-dateness
             self.targets = [] # circumvent add_target's deduplication
             for target in self.pretend_up_to_date:
