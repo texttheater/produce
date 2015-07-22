@@ -481,6 +481,7 @@ class Producer(Thread):
         # it's not needed.
         except (Exception, KeyboardInterrupt) as e:
             self.exception = e
+        # Send message that we're done:
         if self.queue is not None:
             self.queue.put(self)
 
