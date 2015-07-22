@@ -479,9 +479,7 @@ class Producer(Thread):
         # Catch exceptions and store them for when the calling thread tries to
         # get the result. We could store the stacktrace, too, but currently
         # it's not needed.
-        except KeyboardInterrupt as e:
-            self.exception = e
-        except Exception as e:
+        except (Exception, KeyboardInterrupt) as e:
             self.exception = e
         if self.queue is not None:
             self.queue.put(self)
