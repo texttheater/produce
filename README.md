@@ -711,6 +711,23 @@ help message:
                             modification times of their changed dependencies as
                             necessary.
 
+### Status and debugging messages
+
+When it starts (re)building a target, Produce will tell you so with a status
+message in green where the target is indented according to how deep in the
+dependency graph it is. On successful completion of a target, a similar message
+with `complete` is printed. If an error occurs while a target is being built,
+Produce instead prints an `incomplete` message in red. The latter indicates
+controlled shutdown: the recipe has been killed and incomplete outputs have
+been renamed (see below). If you see a starting message but no `(in)complete`
+message for some target, something went really wrong – this should never
+happen. In that case, better check for yourself if any incomplete outputs are
+still hanging around.
+
+Giving the `-d`/`--debug` option one, two or three times will cause Produce to
+additionally flood your terminal with a few, some more or lots of messages that
+may be helpful for debugging.
+
 ### Error handling and aborting
 
 When a recipe fails, i.e. its interpreter returns an exit status other than 0,
