@@ -88,8 +88,8 @@ def shlex_join(value):
 # The current code is terribly ugly, but at least the ugliness is now mostly
 # contained within this section.
 
-target_logger = logging.getLogger('produce')
-target_logger.propagate = False
+status_logger = logging.getLogger('produce')
+status_logger.propagate = False
 logging_is_set_up = False
 
 def set_up_logging(dbglvl):
@@ -101,26 +101,26 @@ def set_up_logging(dbglvl):
     else:
         level = logging.INFO
     logging.basicConfig(format='%(levelname)s: %(message)s', level=level)
-    # Target log messages:
+    # Status messages:
     global logging_is_set_up
     if logging_is_set_up:
         return
     logging_is_set_up = True
-    global target_logger
-    target_logger.handlers = []
-    target_logger.setLevel(logging.INFO)
+    global status_logger
+    status_logger.handlers = []
+    status_logger.setLevel(logging.INFO)
     handler = logging.StreamHandler()
     handler.setLevel(logging.INFO)
-    formatter = TargetLogFormatter(sys.stderr.isatty() and have_smart_terminal())
+    formatter = StatusFormatter(sys.stderr.isatty() and have_smart_terminal())
     handler.setFormatter(formatter)
-    target_logger.addHandler(handler)
+    status_logger.addHandler(handler)
 
 
 def debug(level, message_format, *parameters):
     if debug_level >= level:
         logging.debug(message_format, *parameters)
 
-class TargetLogMessage():
+class StatusMessage():
 
     def __init__(self, action, target, depth):
         self.action = action
@@ -130,7 +130,7 @@ class TargetLogMessage():
     def __str__(self):
         return '{} {}'.format(self.action, self.target)
 
-class TargetLogFormatter(logging.Formatter):
+class StatusFormatter(logging.Formatter):
 
     def __init__(self, colors):
         logging.Formatter.__init__(self)
@@ -148,7 +148,7 @@ class TargetLogFormatter(logging.Formatter):
             self.plain = ''
 
     def format(self, record):
-        if isinstance(record.msg, TargetLogMessage):
+        if isinstance(record.msg, StatusMessage):
             if record.levelno == logging.ERROR:
                 color = self.red
             else:
@@ -159,13 +159,13 @@ class TargetLogFormatter(logging.Formatter):
         else:
             return logging.Formatter.format(self, record)
 
-def target_info(message, target, depth):
-    global target_logger
-    target_logger.info(TargetLogMessage(message, target, depth))
+def status_info(message, target, depth):
+    global status_logger
+    status_logger.info(StatusMessage(message, target, depth))
 
-def target_error(message, target, depth):
-    global target_logger
-    target_logger.error(TargetLogMessage(message, target, depth))
+def status_error(message, target, depth):
+    global status_logger
+    status_logger.error(StatusMessage(message, target, depth))
 
 ### ERRORS
 
@@ -560,12 +560,12 @@ class Producer(Thread):
             return
         target = irule['target']
         if irule['type'] == 'task':
-            target_info('running task', target, self.depth)
+            status_info('running task', target, self.depth)
         else:
             if os.path.exists(target):
-                target_info('rebuilding file', target, self.depth)
+                status_info('rebuilding file', target, self.depth)
             else:
-                target_info('building file', target, self.depth)
+                status_info('building file', target, self.depth)
         recipe = irule['recipe']
         executable = irule.get('shell', 'bash')
         if recipe.startswith('\n'):
@@ -615,8 +615,8 @@ class Producer(Thread):
                         backup_name = output + '~'
                         debug(2, 'renaming %s to %s', output, backup_name)
                         rename_if_exists(output, backup_name)
-                    target_error('incomplete', target, self.depth)
-        target_info('complete', target, self.depth)
+                    status_error('incomplete', target, self.depth)
+        status_info('complete', target, self.depth)
 
     def kill(self):
         self.killed = True
