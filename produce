@@ -731,19 +731,8 @@ class Production:
         # Determine whether target is out of date, based on information about
         # dependencies, all of which are at this point guaranteed to have been
         # added:
-        # 1. Tasks are always considered out of date.
-        # 2. If any dependency is newer than the target, the target is out of
-        #    date.
-        # 3. If any dependency is out of date, so is the target.
-        # 4. Consider it out of date if the always_build option is True.
-        if self.always_build:
-            debug(2, '%s is out of date because -B', target)
-        out_of_date = target_type == 'task' \
-                or any([(ddep not in self.pretend_up_to_date and \
-                self.is_out_of_date(ddep)) for ddep in ddeps]) \
-                or self.detect_changed_ddep(target, time, ddeps) \
-                or self.always_build
-        debug(2, '%s out of date? %s', target, out_of_date)
+        out_of_date = self._check_if_out_of_date(target, target_type, ddeps,
+                time)
         # If we did not detect the target to be out of date but we remember it
         # is, caused by some specific newer direct dependency, we need to
         # rectify the situation by touching that dependency, thereby making it
@@ -769,11 +758,27 @@ class Production:
         if missing:
             self.missing_targets.add(target)
 
-    def detect_changed_ddep(self, target, time, ddeps):
+    def _check_if_out_of_date(self, target, target_type, ddeps, time):
+        if target_type == 'task':
+            debug(2, '%s is out of date because it is a task', target)
+            return True
+        for ddep in ddeps:
+            if ddep not in self.pretend_up_to_date and \
+                    self.is_out_of_date(ddep):
+                debug(2, '%s is out of date because its direct dependency %s '
+                        'is out of date', target, ddep)
+                return True
         for ddep in ddeps:
             if self.target_time[ddep] > time:
+                debug(2, '%s is out of date because its direct dependency %s '
+                        'changed', target, ddep)
+                # Remember which changed ddep caused this target to be out of
+                # date - relevant for pretend mode:
                 self.changed_ddeps[target] = ddep
                 return True
+        if self.always_build:
+            debug(2, '%s is out of date because we are in "always build" mode',
+                    target)
         return False
 
     def is_out_of_date(self, target):
