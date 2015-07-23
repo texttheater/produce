@@ -882,3 +882,6 @@ if __name__ == '__main__':
     except ProduceError as e:
         logging.error(e) # FIXME prints only first line of error message???
         sys.exit(1)
+    except KeyboardInterrupt as e:
+        logging.error('Interrupted')
+        sys.exit(1)
