@@ -33,7 +33,7 @@ but many variable parts, e.g. to indicate experimental parameters.
     - [In rules](#in-rules)
     - [In the global section](#in-the-global-section)
 - [Running Produce](#running-produce)
-  - [When a recipe fails](#when-a-recipe-fails)
+  - [Error handling and aborting](#error-handling-and-aborting)
   - [How targets are matched against rules](#how-targets-are-matched-against-rules)
 - [Internals](#internals)
   - [The build algorithm](#the-build-algorithm)
@@ -710,7 +710,7 @@ help message:
                             modification times of their changed dependencies as
                             necessary
 
-### When a recipe fails
+### Error handling and aborting
 
 When a recipe fails, i.e. its interpreter returns an exit status other than 0,
 the corresponding target file (if any) may already have been created or
@@ -722,6 +722,12 @@ not stay there. It could just delete it, but that might be unwise because the
 user might want to inspect the output file of the erroneous recipe for
 debugging. So, Produce renames the target file by appending a `~` to the
 filename (a common naming convention for short-lived “backups”).
+
+If multiple recipes are running in parallel and one fails, Produce will kill
+all of them, do the renaming and abort immediately.
+
+The same is true if Produce receives an interrupt signal. So you can safely
+abort a production process in your terminal by pressing `Ctrl+C`.
 
 ### How targets are matched against rules
 
