@@ -616,7 +616,7 @@ class Producer(Thread):
                         debug(2, 'renaming %s to %s', output, backup_name)
                         rename_if_exists(output, backup_name)
                     target_error('incomplete', target, self.depth)
-        target_info('completed', target, self.depth)
+        target_info('complete', target, self.depth)
 
     def kill(self):
         self.killed = True
