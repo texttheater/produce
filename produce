@@ -544,7 +544,8 @@ class Producer(Thread):
         if self.target in self.production.pretend_up_to_date:
             return # TODO need to raise error somewhere if target is a file and doesn't exist
         # Make sure dependencies are up to date:
-        self.production._produce(self.production.target_ddeps[self.target])
+        self.production._produce(self.production.target_ddeps[self.target],
+                depth=self.depth + 1)
         # Run recipe. Semaphore limits number of parallel recipes:
         with self.production.build_sema:
             self._run_recipe()
@@ -781,7 +782,7 @@ class Production:
     def is_missing(self, target):
         return target in self.missing_targets
 
-    def _produce(self, targets):
+    def _produce(self, targets, depth=0):
         """
         Internally used method for producing a list of targets. Returns True if
         something needed to be done, False if all targets were already up to
@@ -791,7 +792,7 @@ class Production:
         producers = []
         q = queue.Queue()
         for target in targets:
-            producer = Producer(self, target, depth=0, queue=q)
+            producer = Producer(self, target, depth=depth, queue=q)
             producer.start()
             producers.append(producer)
         # Let all producers finish. If one raises an exception, we induce
