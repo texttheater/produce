@@ -189,7 +189,7 @@ def process_commandline(args=None):
     parser.add_argument('-j', '--jobs', type=int, default=1, help="""Specifies
             the number of jobs (recipes) to run simultaneously.""")
     parser.add_argument('-n', '--dry-run', action='store_true', help="""Print
-            the commands that would be executed, but do not execute them""")
+            status messages, but do not run recipes""")
     parser.add_argument('-s', '--silent', action='store_true', help="""Don't
             print the commands that are executed""")
     parser.add_argument('-u', '--pretend-up-to-date', metavar='FILE',
