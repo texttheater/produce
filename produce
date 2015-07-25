@@ -671,8 +671,8 @@ class Production:
     def add_target(self, target, beam):
         # Catch cyclic dependencies:
         if target in beam:
-            raise ProduceError('cyclic dependency: {}'.format(' -> '.join(beam)
-                    ))
+            raise ProduceError('cyclic dependency: {}'.format(' -> '.join(
+                    beam + [target])))
         # Stop on encountering a target for the second time:
         if target in self.targets:
             return
