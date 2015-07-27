@@ -506,7 +506,9 @@ class Producer(Thread):
             # stack.
             for lockable in lockables:
                 debug(3, 'locking %s', lockable)
-                stack.enter_context(self.production.target_lock[lockable])
+                with self.production.fields_lock:
+                    lock = self.production.target_lock[lockable]
+                stack.enter_context(lock)
                 debug(3, 'locked %s', lockable)
             # Check if the target still needs to be built:
             with self.production.fields_lock:
