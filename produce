@@ -554,7 +554,7 @@ class Producer(Thread):
     def _run_recipe(self):
         """
         This is where it really happens: the recipe for a target is run, and we
-        tell the use about it.
+        tell the user about it.
         """
         irule = self.production.target_irule[self.target]
         if not 'recipe' in irule:
