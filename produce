@@ -471,7 +471,6 @@ class Producer(Thread):
         self.depth = depth
         self.queue = queue
         self.exception = None
-        self.killed = False
 
     def run(self):
         try:
@@ -595,7 +594,7 @@ class Producer(Thread):
                         try:
                             exit = process.wait(timeout=0.05)
                         except subprocess.TimeoutExpired:
-                            if self.killed:
+                            if self.production.killed:
                                 process.kill()
                                 raise ProduceError('recipe killed: {}'.format(
                                         recipe))
@@ -617,9 +616,6 @@ class Producer(Thread):
                         rename_if_exists(output, backup_name)
                     status_error('incomplete', target, self.depth)
         status_info('complete', target, self.depth)
-
-    def kill(self):
-        self.killed = True
     
     def get_result(self):
         """
@@ -667,6 +663,8 @@ class Production:
         # Maps a dependent to a changed direct dependency that causes it to be
         # out of date:
         self.changed_ddeps = {}
+        # Abort flag:
+        self.killed = False
 
     def add_target(self, target, beam):
         # Catch cyclic dependencies:
@@ -805,7 +803,7 @@ class Production:
         exception = None
         all_up_to_date = True
         for _ in targets:
-            if exception:
+            if self.killed:
                 q.get()
             else:
                 try:
@@ -813,9 +811,8 @@ class Production:
                             all_up_to_date
                 except (Exception, KeyboardInterrupt) as e:
                     exception = e
-                    debug(2, 'killing producers because of {}', e)
-                    for producer in producers:
-                        producer.kill()
+                    self.killed = True
+                    debug(3, 'killed production because of %s', e)
         # Propagate exception, if any:
         if exception:
             raise exception
