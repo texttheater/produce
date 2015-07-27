@@ -547,6 +547,8 @@ class Producer(Thread):
                 depth=self.depth + 1)
         # Run recipe. Semaphore limits number of parallel recipes:
         with self.production.build_sema:
+            if self.production.killed:
+                raise ProduceError('recipe killed: {}'.format(recipe))
             self._run_recipe()
 
     def _run_recipe(self):
