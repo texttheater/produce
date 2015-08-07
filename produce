@@ -831,9 +831,12 @@ class Production:
         """
         def handle_signal(signum, frame):
             raise ProduceError('received signal')
-        old_handler = signal.signal(signal.SIGTERM, handle_signal)
-        if old_handler is None:
-            old_handler = signal.SIG_DFL
+        old_handler_term = signal.signal(signal.SIGTERM, handle_signal)
+        old_handler_hup = signal.signal(signal.SIGHUP, handle_signal)
+        if old_handler_term is None:
+            old_handler_term = signal.SIG_DFL
+        if old_handler_hup is None:
+            old_handler_hup = signal.SIG_DFL
         try:
             # Phase 1: build dependency graph and gather information
             # TODO We could probably already start building each target as soon
@@ -852,7 +855,8 @@ class Production:
             self.targets = [] # circumvent add_target's deduplication
             for target in self.pretend_up_to_date:
                 self.add_target(target, [])
-            signal.signal(signal.SIGTERM, old_handler)
+            signal.signal(signal.SIGTERM, old_handler_term)
+            signal.signal(signal.SIGHUP, old_handler_hup)
 
 ### MAIN
 
