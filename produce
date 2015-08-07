@@ -781,6 +781,7 @@ class Production:
         if self.always_build:
             debug(2, '%s is out of date because we are in "always build" mode',
                     target)
+            return True
         return False
 
     def is_out_of_date(self, target):
