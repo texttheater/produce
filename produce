@@ -749,6 +749,9 @@ class Production:
         # some other way - either via an intermediate dependency or because
         # there is a direct task dependency.
         if not out_of_date and target in self.changed_ddeps:
+            # FIXME This is never the case. If we want to preserve ignored
+            # out-of-dateness even if intermediate targets are deleted after the
+            # pretend production, we need to do it differently.
             touch(self.changed_ddeps[target], now() + 1)
         # Store information about this target:
         self.targets.append(target)
