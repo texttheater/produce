@@ -12,4 +12,3 @@ class PretendUpToDateTest(ProduceTestCase):
         self.assertUpdates((), normal, ('a', 'b'), ('c', 'd'))
         self.assertUpdates(('b',), normal, ('a',), ('b', 'c', 'd'))
         self.assertUpdates(('b',), pretending, ('a',), ('b', 'c', 'd'))
-
