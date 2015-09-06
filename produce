@@ -533,6 +533,7 @@ class Producer(Thread):
                 for output in outputs | set((self.target,)):
                     self.production.out_of_date_targets.discard(output)
                     self.production.missing_targets.discard(output)
+                    self.production.built_targets.add(self.target)
         return True
 
     def _build(self):
@@ -660,6 +661,7 @@ class Production:
         self.target_time = {}
         self.out_of_date_targets = set()
         self.missing_targets = set()
+        self.built_targets = set()
         # If a recipe for a target fails, store the exception for the benefit
         # of other threads that need the same target. Instead of trying to
         # build it again, they can just raise the existing exception.
@@ -810,14 +812,19 @@ class Production:
         # Return whether anything was done:
         return not all_up_to_date
 
+    def _adjust_times_for(self, target):
+        for ddep in self.target_ddeps[target]:
+            if ddep in self.pretend_up_to_date:
+                self._adjust_times(ddep)
+            else:
+                self._adjust_times_for(ddep)
+
     def _adjust_times(self, target):
         """
         Follows the dependencies of the target down to the lowest files whose
         change caused the out-of-dateness and touch it to make sure it still
         causes the out-of-dateness even if intermediate targets are deleted.
         """
-        # FIXME only do this for "newer-than" chains that were actually broken
-        # because of a pretend target.
         for ddep in self.target_ddeps[target]:
             if self.is_out_of_date(ddep):
                 self._adjust_times(ddep)
@@ -851,10 +858,11 @@ class Production:
             if not self._produce(targets):
                 logging.info('all targets are up to date')
         finally:
-            # Phase 3: repeat phase 1 for the pretend targets, touching files
-            # in order to preserve out-of-dateness
-            for target in self.pretend_up_to_date:
-                self._adjust_times(target)
+            # Phase 3: adjust times of dependencies of targets that were built,
+            # correcting for time inconsistencies caused by pretend targets:
+            for target in self.built_targets:
+                debug(2, 'Adjusting times for built target %s', target)
+                self._adjust_times_for(target)
             signal.signal(signal.SIGTERM, old_handler_term)
             signal.signal(signal.SIGHUP, old_handler_hup)
 
