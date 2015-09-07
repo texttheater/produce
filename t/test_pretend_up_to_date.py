@@ -3,6 +3,11 @@ from prodtest import ProduceTestCase
 class PretendUpToDateTest(ProduceTestCase):
 
     def test_pretend_up_to_date(self):
+        #   a
+        #   |
+        #   b
+        #  / \
+        # c   d
         normal = lambda: self.produce('a')
         pretending = lambda: self.produce('a', **{'-u': 'b'})
         self.assertDirectoryContents(('produce.ini',))

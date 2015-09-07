@@ -828,7 +828,8 @@ class Production:
         for ddep in self.target_ddeps[target]:
             if self.is_out_of_date(ddep):
                 self._adjust_times(ddep)
-            elif ddep == self.changed_ddeps[target]:
+            elif target in self.changed_ddeps \
+                    and ddep == self.changed_ddeps[target]:
                 debug(2, 'Adjusting time of %s', ddep)
                 touch(ddep, now() + 1)
 
