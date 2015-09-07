@@ -58,7 +58,7 @@ class ProduceTestCase(unittest.TestCase):
         for f in nonExistentFiles:
             self.assertFileDoesNotExist(f)
 
-    def assertNewerThan(self, newFile, oldFile):
+    def assertNewer(self, newFile, oldFile):
         self.assertGreater(self.mtime(newFile), self.mtime(oldFile))
 
     def assertUpdates(self, changed, function, updated, notUpdated):
