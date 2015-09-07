@@ -61,6 +61,9 @@ class ProduceTestCase(unittest.TestCase):
     def assertNewer(self, newFile, oldFile):
         self.assertGreater(self.mtime(newFile), self.mtime(oldFile))
 
+    def assertNewerEqual(self, newFile, oldFile):
+        self.assertGreaterEqual(self.mtime(newFile), self.mtime(oldFile))
+
     def assertUpdates(self, changed, function, updated, notUpdated):
         """
         Touches the files in changed, runs function and asserts that doing so
