@@ -601,6 +601,8 @@ class Producer(Thread):
                         except subprocess.TimeoutExpired:
                             if self.production.killed:
                                 process.kill()
+                                # FIXME this doesn't always kill all child
+                                # processes
                                 raise ProduceError('recipe killed: {}'.format(
                                         recipe))
                     debug(3, 'Exit code: %s', exit)
