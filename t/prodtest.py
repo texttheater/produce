@@ -58,8 +58,11 @@ class ProduceTestCase(unittest.TestCase):
         for f in nonExistentFiles:
             self.assertFileDoesNotExist(f)
 
-    def assertNewerThan(self, newFile, oldFile):
-        self.assertTrue(self.mtime(newFile) > self.mtime(oldFile))
+    def assertNewer(self, newFile, oldFile):
+        self.assertGreater(self.mtime(newFile), self.mtime(oldFile))
+
+    def assertNewerEqual(self, newFile, oldFile):
+        self.assertGreaterEqual(self.mtime(newFile), self.mtime(oldFile))
 
     def assertUpdates(self, changed, function, updated, notUpdated):
         """
@@ -67,8 +70,8 @@ class ProduceTestCase(unittest.TestCase):
         created the files in updated or updated them, and that it did not
         update the files in notUpdated.
         """
-        self.sleep()
         for f in changed:
+            self.sleep(0.1)
             self.touch(f)
         times = {}
         for f in updated + notUpdated:
@@ -78,7 +81,7 @@ class ProduceTestCase(unittest.TestCase):
         for f in updated:
             self.assertGreater(self.qmtime(f), times[f])
         for f in notUpdated:
-            self.assertEqual(self.qmtime(f), times[f])
+            self.assertLessEqual(self.qmtime(f), times[f])
 
     def assertFileContents(self, fileName, expectedContents):
         with open(fileName) as f:
@@ -114,3 +117,6 @@ class ProduceTestCase(unittest.TestCase):
     def createFile(self, name, contents):
         with open(name, 'w', encoding='UTF-8') as f:
             f.write(contents)
+
+    def removeFile(self, name):
+        os.unlink(name)

@@ -533,6 +533,7 @@ class Producer(Thread):
                 for output in outputs | set((self.target,)):
                     self.production.out_of_date_targets.discard(output)
                     self.production.missing_targets.discard(output)
+                    self.production.built_targets.add(self.target)
         return True
 
     def _build(self):
@@ -660,6 +661,7 @@ class Production:
         self.target_time = {}
         self.out_of_date_targets = set()
         self.missing_targets = set()
+        self.built_targets = set()
         # If a recipe for a target fails, store the exception for the benefit
         # of other threads that need the same target. Instead of trying to
         # build it again, they can just raise the existing exception.
@@ -735,21 +737,6 @@ class Production:
         # added:
         out_of_date = self._check_if_out_of_date(target, target_type, ddeps,
                 time)
-        # If we did not detect the target to be out of date but we remember it
-        # is, caused by some specific newer direct dependency, we need to
-        # rectify the situation by touching that dependency, thereby making it
-        # out of date, and detectably so by future Produce invocations. This is
-        # relevant in the second pass of adding dependencies, after the build
-        # process, when we preserve ignored out-of-date statuses. Note that
-        # touching a dependency does not risk introducing a new inconsistency
-        # because if the dependency were out of date, we would have detected
-        # this target to be out of date, too. Note also that if there is no
-        # direct newer file dependency but we still remember the target as out
-        # of date, we are guaranteed to detect this in a future invocation in
-        # some other way - either via an intermediate dependency or because
-        # there is a direct task dependency.
-        if not out_of_date and target in self.changed_ddeps:
-            touch(self.changed_ddeps[target], now() + 1)
         # Store information about this target:
         self.targets.append(target)
         self.target_outputs[target] = outputs
@@ -782,6 +769,7 @@ class Production:
             debug(2, '%s is out of date because we are in "always build" mode',
                     target)
             return True
+        debug(2, '%s is up to date', target)
         return False
 
     def is_out_of_date(self, target):
@@ -824,6 +812,27 @@ class Production:
         # Return whether anything was done:
         return not all_up_to_date
 
+    def _adjust_times_for(self, target):
+        for ddep in self.target_ddeps[target]:
+            if ddep in self.pretend_up_to_date:
+                self._adjust_times(ddep)
+            else:
+                self._adjust_times_for(ddep)
+
+    def _adjust_times(self, target):
+        """
+        Follows the dependencies of the target down to the lowest files whose
+        change caused the out-of-dateness and touch it to make sure it still
+        causes the out-of-dateness even if intermediate targets are deleted.
+        """
+        for ddep in self.target_ddeps[target]:
+            if self.is_out_of_date(ddep):
+                self._adjust_times(ddep)
+            elif target in self.changed_ddeps \
+                    and ddep == self.changed_ddeps[target]:
+                debug(2, 'Adjusting time of %s', ddep)
+                touch(ddep, now() + 1)
+
     def produce(self, targets):
         """
         After adding all targets, call this method to produce them. High-level
@@ -850,11 +859,11 @@ class Production:
             if not self._produce(targets):
                 logging.info('all targets are up to date')
         finally:
-            # Phase 3: repeat phase 1 for the pretend targets, touching files
-            # in order to preserve out-of-dateness
-            self.targets = [] # circumvent add_target's deduplication
-            for target in self.pretend_up_to_date:
-                self.add_target(target, [])
+            # Phase 3: adjust times of dependencies of targets that were built,
+            # correcting for time inconsistencies caused by pretend targets:
+            for target in self.built_targets:
+                debug(2, 'Adjusting times for built target %s', target)
+                self._adjust_times_for(target)
             signal.signal(signal.SIGTERM, old_handler_term)
             signal.signal(signal.SIGHUP, old_handler_hup)
 

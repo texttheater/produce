@@ -26,16 +26,16 @@ class DepTest(ProduceTestCase):
         self.touch('d')
         self.sleep()
         self.produce('a')
-        self.assertNewerThan('a', 'd') # a was rebuilt
-        self.assertNewerThan('b', 'd') # b was rebuilt
-        self.assertNewerThan('d', 'c') # c was not rebuilt
+        self.assertNewer('a', 'd') # a was rebuilt
+        self.assertNewer('b', 'd') # b was rebuilt
+        self.assertNewer('d', 'c') # c was not rebuilt
         self.sleep()
         self.touch('c')
         self.produce('a')
-        self.assertNewerThan('a', 'c') # a was rebuilt
-        self.assertNewerThan('c', 'b') # b was not rebuilt
-        self.assertNewerThan('c', 'd') # d was not rebuilt
-        self.assertNewerThan('c', 'e') # e was not rebuilt
+        self.assertNewer('a', 'c') # a was rebuilt
+        self.assertNewer('c', 'b') # b was not rebuilt
+        self.assertNewer('c', 'd') # d was not rebuilt
+        self.assertNewer('c', 'e') # e was not rebuilt
 
     def assertOriginalState(self):
         self.assertState(['d', 'e'], ['a', 'b', 'c'])
