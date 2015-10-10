@@ -2,6 +2,9 @@
 
 import argparse
 import ast
+import asyncio
+import atexit
+import concurrent
 import errno
 import logging
 import os
@@ -10,14 +13,13 @@ import re
 import shlex
 import shutil
 import signal
-import subprocess
 import sys
 import time
 
+from asyncio import BoundedSemaphore, Lock
 from collections import defaultdict, OrderedDict
 from contextlib import ExitStack
 from tempfile import NamedTemporaryFile
-from threading import BoundedSemaphore, RLock, Thread
 
 ### PLANNED FEATURES
 
@@ -35,6 +37,12 @@ from threading import BoundedSemaphore, RLock, Thread
 # dependencies
 # TODO optionally delete intermediate files
 # TODO rename private members
+
+### CLEANUP
+
+# For some reason Python spews error messages on exit if we use the event loop
+# and don't close it.
+atexit.register(lambda: asyncio.get_event_loop().close())
 
 ### UTILITIES
 
@@ -455,35 +463,20 @@ def read_depfile(filename):
 
 ### PRODUCTION
 
-class Producer(Thread):
+class Producer:
 
     """
-    A producer is an "actor" in charge of producing a single target. It is a
-    thread: you create it, you start it, and when it's done, it will put itself
-    onto the queue that you passed to the constructor. From there you can get
-    it and call get_result to get the result.
+    A producer is an "actor" in charge of producing a single target. This is
+    done by running its coroutine build_if_required to completion.
     """
 
-    def __init__(self, production, target, depth=0, queue=None):
-        Thread.__init__(self)
+    def __init__(self, production, target, depth=0):
         self.production = production
         self.target = target
         self.depth = depth
-        self.queue = queue
         self.exception = None
 
-    def run(self):
-        try:
-            self.result = self.build_if_required()
-        # Catch exceptions and store them for when the calling thread tries to
-        # get the result. We could store the stacktrace, too, but currently
-        # it's not needed.
-        except (Exception, KeyboardInterrupt) as e:
-            self.exception = e
-        # Send message that we're done:
-        if self.queue is not None:
-            self.queue.put(self)
-
+    @asyncio.coroutine
     def build_if_required(self):
         """
         (Re)builds the target of this producer unless it is already up to date.
@@ -506,36 +499,33 @@ class Producer(Thread):
             # stack.
             for lockable in lockables:
                 debug(3, 'locking %s', lockable)
-                with self.production.fields_lock:
-                    lock = self.production.target_lock[lockable]
-                stack.enter_context(lock)
+                lock = self.production.target_lock[lockable]
+                stack.enter_context((yield from lock))
                 debug(3, 'locked %s', lockable)
             # Check if the target still needs to be built:
-            with self.production.fields_lock:
-                # If the target is up-to-date and non-missing, we're done:
-                if not (self.production.is_out_of_date(self.target) or \
-                        self.production.is_missing(self.target)):
-                    return False
-                # If building this target encountered an exception before, we
-                # also raise it, in case this thread is joined earlier than the
-                # one which originally raised it:
-                if self.target in self.production.target_exception:
-                    raise self.production.target_exception[self.target]
+            # If the target is up-to-date and non-missing, we're done:
+            if not (self.production.is_out_of_date(self.target) or \
+                    self.production.is_missing(self.target)):
+                return False
+            # If building this target encountered an exception before, we
+            # also raise it, in case this coroutine completes earlier than the
+            # one that originally raised it. TODO Is that actually possible?
+            if self.target in self.production.target_exception:
+                raise self.production.target_exception[self.target]
             # Build the target:
             try:
-                self._build()
+                yield from self._build()
             except Exception as e:
-                with self.production.fields_lock:
-                    self.production.target_exception[self.target] = e
+                self.production.target_exception[self.target] = e
                 raise e
             # Mark all outputs as now up-to-date and non-missing:
-            with self.production.fields_lock:
-                for output in outputs | set((self.target,)):
-                    self.production.out_of_date_targets.discard(output)
-                    self.production.missing_targets.discard(output)
-                    self.production.built_targets.add(self.target)
+            for output in outputs | set((self.target,)):
+                self.production.out_of_date_targets.discard(output)
+                self.production.missing_targets.discard(output)
+                self.production.built_targets.add(self.target)
         return True
 
+    @asyncio.coroutine
     def _build(self):
         """
         If it has been decided that a target is out of date, this is the
@@ -546,14 +536,16 @@ class Producer(Thread):
         if self.target in self.production.pretend_up_to_date:
             return # TODO need to raise error somewhere if target is a file and doesn't exist
         # Make sure dependencies are up to date:
-        self.production._produce(self.production.target_ddeps[self.target],
+        yield from self.production._produce(
+                self.production.target_ddeps[self.target],
                 depth=self.depth + 1)
         # Run recipe. Semaphore limits number of parallel recipes:
-        with self.production.build_sema:
+        with (yield from self.production.build_sema):
             if self.production.killed:
                 raise ProduceError('recipe killed: {}'.format(recipe))
-            self._run_recipe()
+            yield from self._run_recipe()
 
+    @asyncio.coroutine
     def _run_recipe(self):
         """
         This is where it really happens: the recipe for a target is run, and we
@@ -589,24 +581,12 @@ class Producer(Thread):
                 with NamedTemporaryFile(mode='w') as recipefile:
                     recipefile.write(recipe)
                     recipefile.flush()
-                    with self.production.fields_lock:
-                        # Start running the recipe:
-                        process = subprocess.Popen([executable,
-                            recipefile.name], stdin=sys.stdin)
-                    # Wait for recipe to finish:
-                    exit = None
-                    while exit is None:
-                        try:
-                            exit = process.wait(timeout=0.05)
-                        except subprocess.TimeoutExpired:
-                            if self.production.killed:
-                                process.kill()
-                                # FIXME this doesn't always kill all child
-                                # processes
-                                raise ProduceError('recipe killed: {}'.format(
-                                        recipe))
-                    debug(3, 'Exit code: %s', exit)
-                if exit != 0:
+                    process = yield from asyncio.create_subprocess_exec(
+                            executable, recipefile.name)
+                    yield from asyncio.wait((process.wait(),
+                            self.production.supervise(process)))
+                    debug(3, 'Exit code: %s', process.returncode)
+                if process.returncode != 0:
                     raise ProduceError('recipe failed: {}'.format(recipe))
                 success = True
                 # TODO check here if file was created for file rules, raise
@@ -651,8 +631,7 @@ class Production:
         self.pretend_up_to_date = pretend_up_to_date
         self.silent = silent
         # Create locks for the building phase:
-        self.fields_lock = RLock()
-        self.target_lock = defaultdict(RLock)
+        self.target_lock = defaultdict(Lock)
         debug(3, 'using up to %s threads', jobs)
         self.build_sema = BoundedSemaphore(jobs)
         # Initialize fields to store information about individual targets:
@@ -710,7 +689,9 @@ class Production:
             # Add it recursively:
             self.add_target(ddep, beam + [target])
             # Make sure it's up to date:
-            Producer(self, ddep).build_if_required() # TODO do this asynchronously like for normal targets
+            asyncio.get_event_loop().run_until_complete(Producer(self,
+                    ddep).build_if_required())
+            # TODO do this asynchronously like for normal targets
         # Determine other dependencies and add them recursively:
         ddeps = list_ddeps(irule)
         debug(2, '%s <- %s', target, ddeps)
@@ -780,39 +761,45 @@ class Production:
     def is_missing(self, target):
         return target in self.missing_targets
 
+    @asyncio.coroutine
     def _produce(self, targets, depth=0):
         """
         Internally used method for producing a list of targets. Returns True if
         something needed to be done, False if all targets were already up to
         date.
         """
+        if not targets:
+            return False # asyncio.wait doesn't like empty sequences
         # Build requested targets in parallel:
-        producers = []
-        q = queue.Queue()
-        for target in targets:
-            producer = Producer(self, target, depth=depth, queue=q)
-            producer.start()
-            producers.append(producer)
+        producers = [Producer(self, target, depth=depth) for target in targets]
+        tasks = [asyncio.Task(producer.build_if_required())
+                for producer in producers]
         # Let all producers finish. If one raises an exception, we induce
-        # controlled shutdown in (kill) all others.
-        exception = None
-        all_up_to_date = True
-        for _ in targets:
+        # controlled shutdown of all Producers in this Production.
+        done, pending = yield from asyncio.wait(tasks,
+                return_when=concurrent.futures.FIRST_EXCEPTION)
+        if pending:
+            self.killed = True
+            yield from asyncio.wait(pending)
+            # Propagate first exception:
+            done[0].result()
+        # Return whether anything was done, or propagate exception:
+        return any(task.result() for task in tasks)
+
+    @asyncio.coroutine
+    def supervise(self, process):
+        """
+        This coroutine periodically checks whether the Production is killed and
+        if so, kills the process given as argument. It returns when the process
+        is done.
+        """
+        while True:
+            yield from asyncio.sleep(0.05)
+            if process.returncode is not None:
+                return
             if self.killed:
-                q.get()
-            else:
-                try:
-                    all_up_to_date = not q.get().get_result() and \
-                            all_up_to_date
-                except (Exception, KeyboardInterrupt) as e:
-                    exception = e
-                    self.killed = True
-                    debug(3, 'killed production because of %s', e)
-        # Propagate exception, if any:
-        if exception:
-            raise exception
-        # Return whether anything was done:
-        return not all_up_to_date
+                process.kill()
+                # FIXME this doesn't always kill all child processes
 
     def _adjust_times_for(self, target):
         for ddep in self.target_ddeps[target]:
@@ -858,7 +845,9 @@ class Production:
             # Phase 2: build all we need to build
             # TODO Here we'd then not run the producers, just wait for them to
             # finish. How? Via centrally kept queues?
-            if not self._produce(targets):
+            task = asyncio.Task(self._produce(targets))
+            asyncio.get_event_loop().run_until_complete(asyncio.wait((task,)))
+            if not task.result():
                 logging.info('all targets are up to date')
         finally:
             # Phase 3: adjust times of dependencies of targets that were built,
