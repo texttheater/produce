@@ -46,7 +46,7 @@ Requirements
 
 * A Unix-like operating system such as Linux or Mac OS X. Cygwin under Windows
   may also work.
-* Python 3
+* Python 3.4 or higher
 * Git (for downloading Produce)
 
 Obtaining Produce
