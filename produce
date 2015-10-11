@@ -141,7 +141,6 @@ def set_up_logging(dbglvl):
     handler.setFormatter(formatter)
     status_logger.addHandler(handler)
 
-
 def debug(level, message_format, *parameters):
     if debug_level >= level:
         logging.debug(message_format, *parameters)
