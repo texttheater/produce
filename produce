@@ -46,6 +46,24 @@ atexit.register(lambda: asyncio.get_event_loop().close())
 
 ### UTILITIES
 
+def get_results(tasks):
+    """
+    Returns a list of the results of the given asyncio.Task objects. It also
+    makes sure *all* their exceptions are retrieved, but only the first is
+    re-raised.
+    """
+    exception = None
+    results = []
+    for task in tasks:
+        try:
+            results.append(task.result())
+        except BaseException as e:
+            if exception is None:
+                exception = e
+    if exception is not None:
+        raise exception
+    return results
+
 def have_smart_terminal():
     # courtesy of apenwarr's redo
     return (os.environ.get('TERM') or 'dumb') != 'dumb'
@@ -782,9 +800,9 @@ class Production:
             self.killed = True
             yield from asyncio.wait(pending)
             # Propagate first exception:
-            done[0].result()
+            get_results(list(done) + list(pending))
         # Return whether anything was done, or propagate exception:
-        return any(task.result() for task in tasks)
+        return any(get_results(tasks))
 
     @asyncio.coroutine
     def supervise(self, process):
