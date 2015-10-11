@@ -82,18 +82,14 @@ def touch(path, timestamp):
 def shlex_join(value):
     return ' '.join((shlex.quote(str(x)) for x in value))
 
-### LOGGING
-# Produce aims to communicate with the user in an inuitive and flexible way.
-# Reconciling these aims with Python's logging facilities is an ongoing battle.
-# The current code is terribly ugly, but at least the ugliness is now mostly
-# contained within this section.
+### GENERAL LOGGING
 
-status_logger = logging.getLogger('produce')
-status_logger.propagate = False
-logging_is_set_up = False
+# General logging uses the root logger and configures it for each production
+# (using the set_up_logging method). We use log levels INFO and DEBUG. For
+# DEBUG messages, we also roll our own, finer-grained filter depending on how
+# detailed debug output the user requested.
 
 def set_up_logging(dbglvl):
-    # Ordinary logging:
     global debug_level
     debug_level = dbglvl
     if debug_level > 1:
@@ -105,6 +101,13 @@ def set_up_logging(dbglvl):
 def debug(level, message_format, *parameters):
     if debug_level >= level:
         logging.debug(message_format, *parameters)
+
+### LOGGING FOR STATUS MESSAGES
+
+# Status messages also use the logging module, but a different logger, called
+# produce. Some unit tests hook into this logger using assertLogs to test that
+# the right status messages are printed at the same time. The methods
+# status_info and status_error are used to generate status messages.
 
 class StatusMessage():
 
@@ -146,6 +149,8 @@ class StatusFormatter(logging.Formatter):
             return logging.Formatter.format(self, record)
 
 # Set up logging for status messages:
+status_logger = logging.getLogger('produce')
+status_logger.propagate = False
 status_logger.handlers = [] # remove default handler
 status_logger.setLevel(logging.INFO)
 handler = logging.StreamHandler()
