@@ -862,6 +862,7 @@ class Production:
             production.killed = True
         loop.add_signal_handler(signal.SIGTERM, handle_signal, self)
         loop.add_signal_handler(signal.SIGHUP, handle_signal, self)
+        loop.add_signal_handler(signal.SIGINT, handle_signal, self)
         try:
             # Phase 1: build dependency graph and gather information
             # TODO We could probably already start building each target as soon
