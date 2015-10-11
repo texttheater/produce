@@ -9,7 +9,7 @@ but many variable parts, e.g. to indicate experimental parameters.
 
 <!-- START doctoc generated TOC please keep comment here to allow auto update -->
 <!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
-**Table of Contents**  *generated with [DocToc](https://github.com/thlorenz/doctoc)*
+**Table of Contents**  *generated with [DocToc](http://doctoc.herokuapp.com/)*
 
 - [Requirements](#requirements)
 - [Obtaining Produce](#obtaining-produce)
@@ -33,6 +33,7 @@ but many variable parts, e.g. to indicate experimental parameters.
     - [In rules](#in-rules)
     - [In the global section](#in-the-global-section)
 - [Running Produce](#running-produce)
+  - [Status and debugging messages](#status-and-debugging-messages)
   - [Error handling and aborting](#error-handling-and-aborting)
   - [How targets are matched against rules](#how-targets-are-matched-against-rules)
 - [Internals](#internals)
