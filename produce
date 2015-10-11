@@ -41,9 +41,19 @@ from tempfile import NamedTemporaryFile
 
 ### CLEANUP
 
-# For some reason Python spews error messages on exit if we use the event loop
-# and don't close it.
-atexit.register(lambda: asyncio.get_event_loop().close())
+# Make sure the event loop is closed before the program exits so we don't get
+# a resource warning or hit this bug: https://bugs.python.org/issue23548
+# Also need to handle the case where the event loop is already gone for some
+# reason. asyncio does make one jump through hoops. >:-(
+
+def close_event_loop():
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        return
+    loop.close()
+
+atexit.register(close_event_loop)
 
 ### UTILITIES
 
