@@ -1,0 +1,17 @@
+import os
+
+from prodtest import ProduceTestCase
+
+class ManyTargetsTest(ProduceTestCase):
+
+    """
+    A test where the dependency graph has a large number of nodes (4096). Old
+    thread-based Produce would crash because it created a thread for every
+    target. New asyncio-based Produce handles it with ease.
+
+    This test is currently not included in the test suite because it takes
+    very long, illustrating the unfortunately high overhead of Producers.
+    """
+
+    def test_manytargets(self):
+        self.produce(**{'-j': '64'})
