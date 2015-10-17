@@ -216,8 +216,13 @@ class ProduceError(Exception):
 
 def process_commandline(args=None):
     parser = argparse.ArgumentParser()
-    parser.add_argument('-B', '--always-build', action='store_true',
-            help="""Unconditionally build all targets""")
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument('-B', '--always-build', action='store_true',
+            help="""Unconditionally build all specified targets and their """
+            """dependencies""")
+    group.add_argument('-b', '--always-build-specified', action='store_true',
+            help="""Unconditionally build all specified targets, but treat """
+            """their dependencies normally (only build if out of date)""")
     parser.add_argument('-d', '--debug', action='count', default=0,
             help="""Print debugging information. Give this option multiple
             times for more information.""")
@@ -679,7 +684,7 @@ class Production:
         # Abort flag:
         self.killed = False
 
-    def add_target(self, target, beam):
+    def add_target(self, target, beam, always_build_specified):
         # Catch cyclic dependencies:
         if target in beam:
             raise ProduceError('cyclic dependency: {}'.format(' -> '.join(
@@ -713,7 +718,7 @@ class Production:
         if 'depfile' in irule:
             ddep = irule['depfile']
             # Add it recursively:
-            self.add_target(ddep, beam + [target])
+            self.add_target(ddep, beam + [target], False)
             # Make sure it's up to date:
             asyncio.get_event_loop().run_until_complete(Producer(self,
                     ddep).build_if_required())
@@ -722,7 +727,7 @@ class Production:
         ddeps = list_ddeps(irule)
         debug(2, '%s <- %s', target, ddeps)
         for ddep in ddeps:
-            self.add_target(ddep, beam + [target])
+            self.add_target(ddep, beam + [target], False)
         if ddeps:
             max_ddep_time = max([self.target_time[ddep] for ddep in ddeps])
         else:
@@ -745,7 +750,7 @@ class Production:
         # dependencies, all of which are at this point guaranteed to have been
         # added:
         out_of_date = self._check_if_out_of_date(target, target_type, ddeps,
-                time)
+                time, always_build_specified)
         # Store information about this target:
         self.targets.append(target)
         self.target_outputs[target] = outputs
@@ -756,7 +761,8 @@ class Production:
         if missing:
             self.missing_targets.add(target)
 
-    def _check_if_out_of_date(self, target, target_type, ddeps, time):
+    def _check_if_out_of_date(self, target, target_type, ddeps, time,
+            always_build_specified):
         if target_type == 'task':
             debug(2, '%s is out of date because it is a task', target)
             return True
@@ -778,6 +784,9 @@ class Production:
             debug(2, '%s is out of date because we are in "always build" mode',
                     target)
             return True
+        if always_build_specified:
+            debug(2, '%s is out of date because we are in "always build '
+                    'specified" mode')
         debug(2, '%s is up to date', target)
         return False
 
@@ -848,7 +857,7 @@ class Production:
                 debug(2, 'Adjusting time of %s', ddep)
                 touch(ddep, now() + 1)
 
-    def produce(self, targets):
+    def produce(self, targets, always_build_specified=False):
         """
         After adding all targets, call this method to produce them. High-level
         method responsible for error handling and clean aborts.
@@ -866,7 +875,7 @@ class Production:
             # as it's added. Advantages: more elegant, dependency files could
             # be built concurrently.
             for target in targets:
-                self.add_target(target, [])
+                self.add_target(target, [], always_build_specified)
             # Phase 2: build all we need to build
             # TODO Here we'd then not run the producers, just wait for them to
             # finish. How? Via centrally kept queues?
@@ -909,7 +918,8 @@ def produce(args=[]):
     exec(globes.get('prelude', ''), globes)
     # Produce:
     Production(targets, rules, globes, args.dry_run, args.always_build,
-            args.jobs, args.pretend_up_to_date).produce(targets)
+            args.jobs, args.pretend_up_to_date).produce(targets,
+            args.always_build_specified)
 
 if __name__ == '__main__':
     try:
