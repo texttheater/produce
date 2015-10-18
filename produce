@@ -767,18 +767,18 @@ class Production:
             debug(2, '%s is out of date because it is a task', target)
             return True
         for ddep in ddeps:
-            if ddep not in self.pretend_up_to_date and \
-                    self.is_out_of_date(ddep):
-                debug(2, '%s is out of date because its direct dependency %s '
-                        'is out of date', target, ddep)
-                return True
-        for ddep in ddeps:
             if self.target_time[ddep] > time:
                 debug(2, '%s is out of date because its direct dependency %s '
                         'changed', target, ddep)
                 # Remember which changed ddep caused this target to be out of
                 # date - relevant for pretend mode:
                 self.changed_ddeps[target] = ddep
+                return True
+        for ddep in ddeps:
+            if ddep not in self.pretend_up_to_date and \
+                    self.is_out_of_date(ddep):
+                debug(2, '%s is out of date because its direct dependency %s '
+                        'is out of date', target, ddep)
                 return True
         if self.always_build:
             debug(2, '%s is out of date because we are in "always build" mode',
