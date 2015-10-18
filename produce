@@ -853,7 +853,7 @@ class Production:
         for ddep in self.target_ddeps[target]:
             if self.is_out_of_date(ddep):
                 self._adjust_times(ddep)
-            elif target in self.changed_ddeps \
+            if target in self.changed_ddeps \
                     and ddep == self.changed_ddeps[target]:
                 debug(2, 'Adjusting time of %s', ddep)
                 touch(ddep, now() + 1)
@@ -877,6 +877,7 @@ class Production:
             # be built concurrently.
             for target in targets:
                 self.add_target(target, [], always_build_specified)
+            debug(3, 'Changed direct dependencies: %s', self.changed_ddeps)
             # Phase 2: build all we need to build
             # TODO Here we'd then not run the producers, just wait for them to
             # finish. How? Via centrally kept queues?
