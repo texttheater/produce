@@ -786,7 +786,8 @@ class Production:
             return True
         if always_build_specified:
             debug(2, '%s is out of date because we are in "always build '
-                    'specified" mode')
+                    'specified" mode', target)
+            return True
         debug(2, '%s is up to date', target)
         return False
 
