@@ -49,7 +49,7 @@ from tempfile import NamedTemporaryFile
 def close_event_loop():
     try:
         loop = asyncio.get_event_loop()
-    except RuntimeError:
+    except (RuntimeError, AssertionError):
         return
     loop.close()
 
