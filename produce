@@ -636,15 +636,6 @@ class Producer:
                     status_error('incomplete', target, self.depth)
         status_info('complete', target, self.depth)
     
-    def get_result(self):
-        """
-        Returns True if the target was (re)built, False if the target was
-        already update. Raises a ProduceError if something went wrong.
-        """
-        if self.exception:
-            raise self.exception
-        return self.result
-
 class Production:
 
     """
