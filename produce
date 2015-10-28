@@ -570,21 +570,23 @@ class Producer:
         yield from self.production._produce(
                 self.production.target_ddeps[self.target],
                 depth=self.depth + 1)
+        # Get recipe:
+        irule = self.production.target_irule[self.target]
+        if not 'recipe' in irule:
+            return
+        recipe = irule['recipe']
         # Run recipe. Semaphore limits number of parallel recipes:
         with (yield from self.production.build_sema):
             if self.production.killed:
                 raise ProduceError('recipe killed: {}'.format(recipe))
-            yield from self._run_recipe()
+            yield from self._run_recipe(irule, recipe)
 
     @asyncio.coroutine
-    def _run_recipe(self):
+    def _run_recipe(self, irule, recipe):
         """
         This is where it really happens: the recipe for a target is run, and we
         tell the user about it.
         """
-        irule = self.production.target_irule[self.target]
-        if not 'recipe' in irule:
-            return
         target = irule['target']
         if irule['type'] == 'task':
             status_info('running task', target, self.depth)
