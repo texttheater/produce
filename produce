@@ -635,7 +635,7 @@ class Producer:
                         debug(2, 'renaming %s to %s', output, backup_name)
                         rename_if_exists(output, backup_name)
                     status_error('incomplete', target, self.depth)
-        status_info('complete', target, self.depth)
+            status_info('complete', target, self.depth)
     
 class Production:
 
