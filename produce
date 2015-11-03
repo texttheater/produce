@@ -618,8 +618,9 @@ class Producer:
                             self.production.supervise(process)))
                     debug(3, 'Exit code: %s', process.returncode)
                 if process.returncode != 0:
-                    # Kill production immediately to prevent new recipes from
-                    # starting to run when we release the semaphore.
+                    # Kill the production to prevent new recipes from running
+                    # and the cause the supervisor routines to kill running
+                    # ones:
                     self.production.killed = True
                     raise ProduceError('recipe failed: {}'.format(recipe))
                 success = True
@@ -803,16 +804,7 @@ class Production:
         producers = [Producer(self, target, depth=depth) for target in targets]
         tasks = [asyncio.Task(producer.build_if_required())
                 for producer in producers]
-        # Let all producers finish. If one raises an exception, we induce
-        # controlled shutdown of all Producers in this Production.
-        done, pending = yield from asyncio.wait(tasks,
-                return_when=concurrent.futures.FIRST_EXCEPTION)
-        if pending:
-            self.killed = True
-            yield from asyncio.wait(pending)
-            # Propagate first exception:
-            get_results(list(done) + list(pending))
-        # Return whether anything was done, or propagate exception:
+        yield from asyncio.wait(tasks)
         return any(get_results(tasks))
 
     @asyncio.coroutine
