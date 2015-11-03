@@ -618,6 +618,9 @@ class Producer:
                             self.production.supervise(process)))
                     debug(3, 'Exit code: %s', process.returncode)
                 if process.returncode != 0:
+                    # Kill production immediately to prevent new recipes from
+                    # starting to run when we release the semaphore.
+                    self.production.killed = True
                     raise ProduceError('recipe failed: {}'.format(recipe))
                 success = True
                 # TODO check here if file was created for file rules, raise
