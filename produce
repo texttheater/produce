@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
 
+"""
+Produce is a replacement for Make geared towards processing data rather than
+compiling code. Key feature: supports multiple expansions in pattern rules.
+https://github.com/texttheater/produce/
+"""
+
 import argparse
 import ast
 import asyncio
