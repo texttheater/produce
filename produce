@@ -27,7 +27,9 @@ from collections import defaultdict, OrderedDict
 from contextlib import ExitStack
 from tempfile import NamedTemporaryFile
 
+
 ### PLANNED FEATURES
+
 
 # TODO change log output to be both friendlier to the human eye and more
 # machine-readable. Then write unit tests that check for not doing the same
@@ -44,12 +46,14 @@ from tempfile import NamedTemporaryFile
 # TODO optionally delete intermediate files
 # TODO rename private members
 
+
 ### CLEANUP
 
 # Make sure the event loop is closed before the program exits so we don't get
 # a resource warning or hit this bug: https://bugs.python.org/issue23548
 # Also need to handle the case where the event loop is already gone for some
 # reason. asyncio does make one jump through hoops. >:-(
+
 
 def close_event_loop():
     try:
@@ -58,9 +62,12 @@ def close_event_loop():
         return
     loop.close()
 
+
 atexit.register(close_event_loop)
 
+
 ### UTILITIES
+
 
 def get_results(tasks):
     """
@@ -80,9 +87,11 @@ def get_results(tasks):
         raise exception
     return results
 
+
 def have_smart_terminal():
     # courtesy of apenwarr's redo
     return (os.environ.get('TERM') or 'dumb') != 'dumb'
+
 
 def mtime(path, default=0):
     """
@@ -96,8 +105,10 @@ def mtime(path, default=0):
             return default
         raise e
 
+
 def now():
     return time.time()
+
 
 def remove_if_exists(path):
     try:
@@ -106,9 +117,10 @@ def remove_if_exists(path):
         if e.errno == errno.EISDIR:
             shutil.rmtree(path)
         elif e.errno == errno.ENOENT:
-            pass # Mission. F***ing. Accomplished.
+            pass  # Mission. F***ing. Accomplished.
         else:
             raise e
+
 
 def rename_if_exists(src, dst):
     try:
@@ -117,19 +129,23 @@ def rename_if_exists(src, dst):
         if e.errno != errno.ENOENT:
             raise e
 
+
 def touch(path, timestamp):
     if subprocess.call(['touch', '-d', '@{}'.format(timestamp), path]) != 0:
         raise ProduceError('failed to touch {}'.format(path))
 
+
 def shlex_join(value):
     return ' '.join((shlex.quote(str(x)) for x in value))
+
 
 ### GENERAL LOGGING
 
 # General logging uses the root logger and configures it for each production
-# (using the set_up_logging method). We use log levels INFO and DEBUG. For
+# (using the set_up_logging function). We use log levels INFO and DEBUG. For
 # DEBUG messages, we also roll our own, finer-grained filter depending on how
 # detailed debug output the user requested.
+
 
 def set_up_logging(dbglvl):
     global debug_level
@@ -140,16 +156,19 @@ def set_up_logging(dbglvl):
         level = logging.INFO
     logging.basicConfig(format='%(levelname)s: %(message)s', level=level)
 
+
 def debug(level, message_format, *parameters):
     if debug_level >= level:
         logging.debug(message_format, *parameters)
+
 
 ### LOGGING FOR STATUS MESSAGES
 
 # Status messages also use the logging module, but a different logger, called
 # produce. Some unit tests hook into this logger using assertLogs to test that
-# the right status messages are printed at the same time. The methods
+# the right status messages are printed at the right time. The methods
 # status_info and status_error are used to generate status messages.
+
 
 class StatusMessage():
 
@@ -160,6 +179,7 @@ class StatusMessage():
 
     def __str__(self):
         return '{} {}'.format(self.action, self.target)
+
 
 class StatusFormatter(logging.Formatter):
 
@@ -174,7 +194,7 @@ class StatusFormatter(logging.Formatter):
         else:
             self.red = ''
             self.green = ''
-            self.yelloe = ''
+            self.yellow = ''
             self.bold = ''
             self.plain = ''
 
@@ -184,16 +204,18 @@ class StatusFormatter(logging.Formatter):
                 color = self.red
             else:
                 color = self.green
-            return '{}{}{}{}{}{}{}'.format(color, record.msg.action,
-                    ' ' * (16 - len(record.msg.action)), self.bold,
-                    ' ' * record.msg.depth, record.msg.target, self.plain)
+            return '{}{}{}{}{}{}{}'.format(
+                color, record.msg.action,
+                ' ' * (16 - len(record.msg.action)), self.bold,
+                ' ' * record.msg.depth, record.msg.target, self.plain)
         else:
             return logging.Formatter.format(self, record)
+
 
 # Set up logging for status messages:
 status_logger = logging.getLogger('produce')
 status_logger.propagate = False
-status_logger.handlers = [] # remove default handler
+status_logger.handlers = []  # remove default handler
 status_logger.setLevel(logging.INFO)
 handler = logging.StreamHandler()
 handler.setLevel(logging.INFO)
@@ -201,15 +223,19 @@ formatter = StatusFormatter(sys.stderr.isatty() and have_smart_terminal())
 handler.setFormatter(formatter)
 status_logger.addHandler(handler)
 
+
 def status_info(message, target, depth):
     global status_logger
     status_logger.info(StatusMessage(message, target, depth))
+
 
 def status_error(message, target, depth):
     global status_logger
     status_logger.error(StatusMessage(message, target, depth))
 
+
 ### ERRORS
+
 
 class ProduceError(Exception):
 
@@ -217,38 +243,52 @@ class ProduceError(Exception):
         Exception.__init__(self, message)
         self.cause = cause
 
+
 ### COMMANDLINE PROCESSING
+
 
 def process_commandline(args=None):
     parser = argparse.ArgumentParser()
     group = parser.add_mutually_exclusive_group()
-    group.add_argument('-B', '--always-build', action='store_true',
-            help="""Unconditionally build all specified targets and their """
-            """dependencies""")
-    group.add_argument('-b', '--always-build-specified', action='store_true',
-            help="""Unconditionally build all specified targets, but treat """
-            """their dependencies normally (only build if out of date)""")
-    parser.add_argument('-d', '--debug', action='count', default=0,
-            help="""Print debugging information. Give this option multiple
-            times for more information.""")
-    parser.add_argument('-f', '--file', default='produce.ini',
-            help="""Use FILE as a Producefile""")
-    parser.add_argument('-j', '--jobs', type=int, default=1, help="""Specifies
-            the number of jobs (recipes) to run simultaneously.""")
-    parser.add_argument('-n', '--dry-run', action='store_true', help="""Print
-            status messages, but do not run recipes""")
-    parser.add_argument('-u', '--pretend-up-to-date', metavar='FILE',
-            action='append', default=[],
-            help="""Do not rebuild FILE or its dependencies (unless they are
-            also depended on by other targets) even if out of date, but make
-            sure that future invocations of Produce will still treat them as
-            out of date by increasing the modification times of their changed
-            dependencies as necessary.""")
-    parser.add_argument('target', nargs='*', help="""The target(s) to produce
-            - if omitted, default target from Producefile is used""")
+    group.add_argument(
+        '-B', '--always-build', action='store_true',
+        help="""Unconditionally build all specified targets and their
+        dependencies""")
+    group.add_argument(
+        '-b', '--always-build-specified', action='store_true',
+        help="""Unconditionally build all specified targets, but treat their
+        dependencies normally (only build if out of date)""")
+    parser.add_argument(
+        '-d', '--debug', action='count', default=0,
+        help="""Print debugging information. Give this option multiple times
+        for more information.""")
+    parser.add_argument(
+        '-f', '--file', default='produce.ini',
+        help="""Use FILE as a Producefile""")
+    parser.add_argument(
+        '-j', '--jobs', type=int, default=1,
+        help="""Specifies the number of jobs (recipes) to run
+        simultaneously""")
+    parser.add_argument(
+        '-n', '--dry-run', action='store_true',
+        help="""Print status messages, but do not run recipes""")
+    parser.add_argument(
+        '-u', '--pretend-up-to-date', metavar='FILE', action='append',
+        default=[],
+        help="""Do not rebuild FILE or its dependencies (unless they are also
+        depended on by other targets) even if out of date, but make sure that
+        future invocations of Produce will still treat them as out of date by
+        increasing the modification times of their changed dependencies as
+        necessary.""")
+    parser.add_argument(
+        'target', nargs='*',
+        help="""The target(s) to produce - if omitted, default target from
+        Producefile is used""")
     return parser.parse_args(args)
 
+
 ### PRODUCEFILE PARSING
+
 
 SECTIONHEAD_PATTERN = re.compile(r'^\[(.*)\]\s*$')
 AVPAIR_PATTERN = re.compile(r'^(\S+?)\s*=\s*(.*)$', re.DOTALL)
@@ -256,15 +296,19 @@ VALUECONT_PATTERN = re.compile(r'^(\s)(.*)$', re.DOTALL)
 COMMENT_PATTERN = re.compile(r'^\s*#.*$')
 BLANKLINE_PATTERN = re.compile(r'^\s*$')
 
+
 def parse_inifile(f):
     in_block = False
     current_name = None
     current_avpairs = None
+
     def current_section():
         return current_name, [(a, v.strip()) for (a, v) in current_avpairs]
+
     def extend_current_value(string):
         a, v = current_avpairs.pop()
         current_avpairs.append((a, v + string))
+
     for lineno, line in enumerate(f, start=1):
         match = SECTIONHEAD_PATTERN.match(line)
         if match:
@@ -286,21 +330,22 @@ def parse_inifile(f):
             if current_avpairs:
                 match = current_valuecont_pattern.match(line)
                 if match:
-                    # Modify pattern for value continutation lines to cut off 
+                    # Modify pattern for value continutation lines to cut off
                     # only as much whitespace as the first continutation line
                     # starts with:
                     current_valuecont_pattern = re.compile(
-                            r'^(' + match.group(1) + r')(.*)$', re.DOTALL)
+                        r'^(' + match.group(1) + r')(.*)$', re.DOTALL)
                     extend_current_value(match.group(2))
                     continue
         match = BLANKLINE_PATTERN.match(line)
         if match:
             if current_avpairs:
-                extend_current_value(os.linesep) 
+                extend_current_value(os.linesep)
             continue
         raise ProduceError('invalid line {} in Producefile'.format(lineno))
     if in_block:
         yield current_section()
+
 
 def interpret_sections(sections):
     raw_globes = {}
@@ -314,16 +359,18 @@ def interpret_sections(sections):
                 continue
         if name == '':
             raise ProduceError('The global section (headed []) is only allowed'
-                    ' at the beginning of the Producefile.')
+                               ' at the beginning of the Producefile.')
         else:
             rules.append((section_name_to_regex(name), OrderedDict(avpairs)))
     return raw_globes, rules
 
+
 ### PATTERN MATCHING AND INTERPOLATION
+
 
 def interpolate(string, varz, ignore_undefined=False, keep_escaped=False):
     debug(3, 'interpolate called with varz: %s', {k: v for (k, v) in
-            varz.items() if k != '__builtins__'})
+          varz.items() if k != '__builtins__'})
     original_string = string
     result = ''
     while string:
@@ -360,26 +407,29 @@ def interpolate(string, varz, ignore_undefined=False, keep_escaped=False):
                         string = string[index + 1:]
                         break
                     else:
-                        raise ProduceError(('name error in expression "{}" ' +
-                                'in string "{}": {}').format(expression,
-                                original_string, e))
+                        raise ProduceError(
+                            'name error in expression "{}" in string "{}": {}'
+                            .format(expression, original_string, e))
                 start = index + 1
             else:
                 if error:
-                    raise ProduceError(('{} evaluating expression "{}" in ' +
-                            'pattern "{}": {}').format(error.__class__.__name__,
-                            expression, original_string, error))
+                    raise ProduceError(
+                        '{} evaluating expression "{}" in pattern "{}": {}'
+                        .format(error.__class__.__name__, expression,
+                                original_string, error))
                 else:
                     raise ProduceError(
-                            'could not parse expression in string {}'.format(
-                            original_string))
+                        'could not parse expression in string {}'
+                        .format(original_string))
         elif string.startswith('%'):
-            raise ProduceError('% must be followed by % or variable name in ' +
-                    'curly braces in pattern {}'.format(original_string))
+            raise ProduceError(
+                '% must be followed by % or variable name in curly braces in '
+                'pattern {}'.format(original_string))
         else:
             result += string[:1]
             string = string[1:]
     return result
+
 
 def value_to_string(value):
     if isinstance(value, str):
@@ -389,6 +439,7 @@ def value_to_string(value):
     except TypeError:
         return str(value)
 
+
 def section_name_to_regex(name, globes={}):
     if len(name) > 1 and name.startswith('/') and name.endswith('/'):
         try:
@@ -397,6 +448,7 @@ def section_name_to_regex(name, globes={}):
             raise ProduceError('{} in regex {}'.format(e, name))
     else:
         return produce_pattern_to_regex(name, globes)
+
 
 def produce_pattern_to_regex(pattern, globes={}):
     ip = interpolate(pattern, globes, ignore_undefined=True, keep_escaped=True)
@@ -417,9 +469,10 @@ def produce_pattern_to_regex(pattern, globes={}):
         else:
             regex += re.escape(ip[:1])
             ip = ip[1:]
-    regex += '$' # re.match doesn't enforce reaching the end by itself
+    regex += '$'  # re.match doesn't enforce reaching the end by itself
     debug(3, 'generated regex: %s', regex)
     return re.compile(regex)
+
 
 ### INSTANTIATED RULES
 
@@ -427,6 +480,7 @@ def produce_pattern_to_regex(pattern, globes={}):
 # section from the Producefile, with the values already expanded. There are two
 # special keys, target (the target as matched by the section header), and type,
 # which must be one of file and task and defaults to file.
+
 
 def create_irule(target, rules, globes):
     # Go through rules until a pattern matches the target:
@@ -437,7 +491,7 @@ def create_irule(target, rules, globes):
             result = {}
             # Dictionary for local variables:
             # TODO is the empty string a good default?
-            varz = dict(globes, **match.groupdict(default = ''))
+            varz = dict(globes, **match.groupdict(default=''))
             # Special attribute: target
             result['target'] = target
             varz['target'] = target
@@ -446,8 +500,8 @@ def create_irule(target, rules, globes):
                 # Remove prefix from attribute to get local variable name:
                 loke = attribute.split('.')[-1]
                 if loke == 'target':
-                    raise ProduceError('cannot overwrite "target" attribute ' +
-                            'in rule for {}'.format(target))
+                    raise ProduceError('cannot overwrite "target" attribute '
+                                       'in rule for {}'.format(target))
                 # Do expansions in value:
                 iv = interpolate(value, varz)
                 # Attribute retains prefix:
@@ -461,10 +515,10 @@ def create_irule(target, rules, globes):
             # If there is a condition and it isn't met, go to the next rule:
             if 'cond' in result and not ast.literal_eval(result['cond']):
                 debug(3, 'condition %s failed, trying next rule',
-                        result['cond'])
+                      result['cond'])
                 continue
             debug(3, 'instantiated rule for target %s has varz: %s', target,
-                    {k: v for (k, v) in varz.items() if k != '__builtins__'})
+                  {k: v for (k, v) in varz.items() if k != '__builtins__'})
             result['type'] = result.get('type', 'file')
             debug(3, 'target type: %s', result['type'])
             if result['type'] not in ('file', 'task'):
@@ -479,6 +533,7 @@ def create_irule(target, rules, globes):
         return {'target': target, 'type': 'file'}
     raise ProduceError('no rule to produce {}'.format(target))
 
+
 def list_ddeps(irule):
     result = []
     for key, value in irule.items():
@@ -490,15 +545,19 @@ def list_ddeps(irule):
             try:
                 result.extend(read_depfile(value))
             except IOError as e:
-                raise ProduceError('cannot read depfile {} for target {}' \
-                        .format(value, irule['target']), e)
+                raise ProduceError(
+                    'cannot read depfile {} for target {}'
+                    .format(value, irule['target']), e)
     return result
+
 
 def read_depfile(filename):
     with open(filename) as f:
         return list(map(str.strip, f))
 
+
 ### PRODUCTION
+
 
 class Producer:
 
@@ -528,10 +587,10 @@ class Producer:
         if self.production.target_irule[self.target].get('recipe'):
             lockables.add(self.target)
         else:
-            lockables.discard(self.target) # in case it's in outputs
+            lockables.discard(self.target)  # in case it's in outputs
         # Sort lockables to prevent deadlocks:
         lockables = sorted(lockables)
-        with ExitStack() as stack: # TODO ExitStack only in 3.3 and above, can we use something else?
+        with ExitStack() as stack:  # TODO ExitStack only in 3.3 and above, can we use something else?
             # Acquire locks. Release is automatic on leaving the context of
             # stack.
             for lockable in lockables:
@@ -541,7 +600,7 @@ class Producer:
                 debug(3, 'locked %s', lockable)
             # Check if the target still needs to be built:
             # If the target is up-to-date and non-missing, we're done:
-            if not (self.production.is_out_of_date(self.target) or \
+            if not (self.production.is_out_of_date(self.target) or
                     self.production.is_missing(self.target)):
                 return False
             # If building this target encountered an exception before, we
@@ -571,11 +630,11 @@ class Producer:
         all direct dependencies are up to date by recursively calling _produce.
         """
         if self.target in self.production.pretend_up_to_date:
-            return # TODO need to raise error somewhere if target is a file and doesn't exist
+            return  # TODO need to raise error somewhere if target is a file and doesn't exist
         # Make sure dependencies are up to date:
         yield from self.production._produce(
-                self.production.target_ddeps[self.target],
-                depth=self.depth + 1)
+            self.production.target_ddeps[self.target],
+            depth=self.depth + 1)
         # Run recipe. Semaphore limits number of parallel recipes:
         with (yield from self.production.build_sema):
             yield from self._run_recipe()
@@ -619,9 +678,10 @@ class Producer:
                     recipefile.write(recipe)
                     recipefile.flush()
                     process = yield from asyncio.create_subprocess_exec(
-                            executable, recipefile.name)
-                    yield from asyncio.wait((process.wait(),
-                            self.production.supervise(process)))
+                        executable, recipefile.name)
+                    yield from asyncio.wait(
+                        (process.wait(),
+                         self.production.supervise(process)))
                     debug(3, 'Exit code: %s', process.returncode)
                 if process.returncode != 0:
                     # Kill the production to prevent new recipes from running
@@ -644,7 +704,8 @@ class Producer:
                         rename_if_exists(output, backup_name)
                     status_error('incomplete', target, self.depth)
             status_info('complete', target, self.depth)
-    
+
+
 class Production:
 
     """
@@ -654,9 +715,9 @@ class Production:
     """
 
     def __init__(self, targets, rules, globes, dry_run, always_build, jobs,
-            pretend_up_to_date):
+                 pretend_up_to_date):
         # General properties, passed as arguments to constructor:
-        self.rules = rules # maps patterns to key-uninstantiated value maps ("rules")
+        self.rules = rules  # maps patterns to key-uninstantiated value maps ("rules")
         self.globes = globes
         self.dry_run = dry_run
         self.always_build = always_build
@@ -668,8 +729,8 @@ class Production:
         # Initialize fields to store information about individual targets:
         self.targets = []
         self.target_outputs = {}
-        self.target_irule = {} # maps targets to key-instantiated value maps ("instantiated rules")
-        self.target_ddeps = {} # direct dependencies
+        self.target_irule = {}  # maps targets to key-instantiated value maps ("instantiated rules")
+        self.target_ddeps = {}  # direct dependencies
         self.target_time = {}
         self.out_of_date_targets = set()
         self.missing_targets = set()
@@ -688,7 +749,7 @@ class Production:
         # Catch cyclic dependencies:
         if target in beam:
             raise ProduceError('cyclic dependency: {}'.format(' -> '.join(
-                    beam + [target])))
+                beam + [target])))
         # Stop on encountering a target for the second time:
         if target in self.targets:
             return
@@ -712,7 +773,7 @@ class Production:
         for output in outputs:
             if output in beam and self.target_irule[output].get('recipe'):
                 raise ProduceError(
-                        'cyclic dependency: {}, which has {} as output'.format(
+                    'cyclic dependency: {}, which has {} as output'.format(
                         ' -> '.join(beam + [target]), output))
         # The first direct dependency is the depfile, if any:
         if 'depfile' in irule:
@@ -720,8 +781,9 @@ class Production:
             # Add it recursively:
             self.add_target(ddep, beam + [target], False)
             # Make sure it's up to date:
-            asyncio.get_event_loop().run_until_complete(Producer(self,
-                    ddep).build_if_required())
+            producer = Producer(self, ddep)
+            future = producer.build_if_required()
+            asyncio.get_event_loop().run_until_complete(future)
             # TODO do this asynchronously like for normal targets
         # Determine other dependencies and add them recursively:
         ddeps = list_ddeps(irule)
@@ -750,7 +812,7 @@ class Production:
         # dependencies, all of which are at this point guaranteed to have been
         # added:
         out_of_date = self._check_if_out_of_date(target, target_type, ddeps,
-                time, always_build_specified)
+                                                 time, always_build_specified)
         # Store information about this target:
         self.targets.append(target)
         self.target_outputs[target] = outputs
@@ -762,14 +824,14 @@ class Production:
             self.missing_targets.add(target)
 
     def _check_if_out_of_date(self, target, target_type, ddeps, time,
-            always_build_specified):
+                              always_build_specified):
         if target_type == 'task':
             debug(2, '%s is out of date because it is a task', target)
             return True
         for ddep in ddeps:
             if self.target_time[ddep] > time:
                 debug(2, '%s is out of date because its direct dependency %s '
-                        'changed', target, ddep)
+                      'changed', target, ddep)
                 # Remember which changed ddep caused this target to be out of
                 # date - relevant for pretend mode:
                 self.changed_ddeps[target] = ddep
@@ -778,15 +840,15 @@ class Production:
             if ddep not in self.pretend_up_to_date and \
                     self.is_out_of_date(ddep):
                 debug(2, '%s is out of date because its direct dependency %s '
-                        'is out of date', target, ddep)
+                      'is out of date', target, ddep)
                 return True
         if self.always_build:
             debug(2, '%s is out of date because we are in "always build" mode',
-                    target)
+                  target)
             return True
         if always_build_specified:
             debug(2, '%s is out of date because we are in "always build '
-                    'specified" mode', target)
+                  'specified" mode', target)
             return True
         debug(2, '%s is up to date', target)
         return False
@@ -805,11 +867,11 @@ class Production:
         date.
         """
         if not targets:
-            return False # asyncio.wait doesn't like empty sequences
+            return False  # asyncio.wait doesn't like empty sequences
         # Build requested targets in parallel:
         producers = [Producer(self, target, depth=depth) for target in targets]
         tasks = [asyncio.Task(producer.build_if_required())
-                for producer in producers]
+                 for producer in producers]
         yield from asyncio.wait(tasks)
         return any(get_results(tasks))
 
@@ -856,8 +918,10 @@ class Production:
         """
         #loop = asyncio.get_event_loop()
         loop = asyncio.get_event_loop()
+
         def handle_signal(production):
             production.killed = True
+
         loop.add_signal_handler(signal.SIGTERM, handle_signal, self)
         loop.add_signal_handler(signal.SIGHUP, handle_signal, self)
         loop.add_signal_handler(signal.SIGINT, handle_signal, self)
@@ -883,16 +947,18 @@ class Production:
                 debug(2, 'Adjusting times for built target %s', target)
                 self._adjust_times_for(target)
 
+
 ### MAIN
+
 
 def produce(args=[]):
     args = process_commandline(args)
     set_up_logging(args.debug)
     try:
         with open(args.file) as f:
-           sections = list(parse_inifile(f))
-           debug(3, 'parsed sections: %s', sections)
-           raw_globes, rules = interpret_sections(sections)
+            sections = list(parse_inifile(f))
+            debug(3, 'parsed sections: %s', sections)
+            raw_globes, rules = interpret_sections(sections)
     except IOError as e:
         raise ProduceError('cannot read file {}'.format(args.file), e)
     globes = {}
@@ -904,21 +970,23 @@ def produce(args=[]):
         if 'default' in globes:
             targets = shlex.split(globes['default'])
         else:
-            raise ProduceError('Don\'t know what to produce. Specify a ' +
-                    'target on the command line or a default target in ' +
-                    'produce.ini.')
+            raise ProduceError(
+                "Don't know what to produce. Specify a target on the command "
+                "line or a default target in produce.ini")
     # Execute prelude, with globes providing the name context:
     exec(globes.get('prelude', ''), globes)
     # Produce:
-    Production(targets, rules, globes, args.dry_run, args.always_build,
-            args.jobs, args.pretend_up_to_date).produce(targets,
-            args.always_build_specified)
+    production = Production(targets, rules, globes, args.dry_run,
+                            args.always_build, args.jobs,
+                            args.pretend_up_to_date)
+    production.produce(targets, args.always_build_specified)
+
 
 if __name__ == '__main__':
     try:
         produce(None)
     except ProduceError as e:
-        logging.error(e) # FIXME prints only first line of error message???
+        logging.error(e)  # FIXME prints only first line of error message???
         sys.exit(1)
     except KeyboardInterrupt as e:
         logging.error('Interrupted')
