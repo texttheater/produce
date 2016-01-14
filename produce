@@ -10,7 +10,6 @@ import argparse
 import ast
 import asyncio
 import atexit
-import concurrent
 import errno
 import logging
 import os
