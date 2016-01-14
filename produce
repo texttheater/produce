@@ -589,7 +589,7 @@ class Producer:
             lockables.discard(self.target)  # in case it's in outputs
         # Sort lockables to prevent deadlocks:
         lockables = sorted(lockables)
-        with ExitStack() as stack:  # TODO ExitStack only in 3.3 and above, can we use something else?
+        with ExitStack() as stack:
             # Acquire locks. Release is automatic on leaving the context of
             # stack.
             for lockable in lockables:
