@@ -617,7 +617,8 @@ class Producer:
             for output in outputs | set((self.target,)):
                 self.production.out_of_date_targets.discard(output)
                 self.production.missing_targets.discard(output)
-                self.production.built_targets.add(self.target)
+            # Mark target as built:
+            self.production.built_targets.add(self.target)
         return True
 
     @asyncio.coroutine
