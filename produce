@@ -685,8 +685,7 @@ class Producer:
                     debug(3, 'Exit code: %s', process.returncode)
                 if process.returncode != 0:
                     # Kill the production to prevent new recipes from running
-                    # and the cause the supervisor routines to kill running
-                    # ones:
+                    # and cause the supervisor routines to kill running ones:
                     self.production.killed = True
                     raise ProduceError('recipe failed: {}'.format(recipe))
                 success = True
