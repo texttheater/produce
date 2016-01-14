@@ -915,7 +915,6 @@ class Production:
         After adding all targets, call this method to produce them. High-level
         method responsible for error handling and clean aborts.
         """
-        #loop = asyncio.get_event_loop()
         loop = asyncio.get_event_loop()
 
         def handle_signal(production):
