@@ -713,13 +713,13 @@ class Production:
     state that changes during the production process.
     """
 
-    def __init__(self, targets, rules, globes, dry_run, always_build, jobs,
+    def __init__(self, targets, rules, globes, dry_run, always_build_all, jobs,
                  pretend_up_to_date):
         # General properties, passed as arguments to constructor:
         self.rules = rules  # maps patterns to key-uninstantiated value maps ("rules")
         self.globes = globes
         self.dry_run = dry_run
-        self.always_build = always_build
+        self.always_build_all = always_build_all
         self.pretend_up_to_date = pretend_up_to_date
         # Create locks for the building phase:
         self.target_lock = defaultdict(Lock)
@@ -841,7 +841,7 @@ class Production:
                 debug(2, '%s is out of date because its direct dependency %s '
                       'is out of date', target, ddep)
                 return True
-        if self.always_build:
+        if self.always_build_all:
             debug(2, '%s is out of date because we are in "always build" mode',
                   target)
             return True
