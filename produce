@@ -713,13 +713,14 @@ class Production:
     state that changes during the production process.
     """
 
-    def __init__(self, targets, rules, globes, dry_run, always_build_all, jobs,
-                 pretend_up_to_date):
+    def __init__(self, targets, rules, globes, dry_run, always_build_all,
+                 always_build_these, jobs, pretend_up_to_date):
         # General properties, passed as arguments to constructor:
         self.rules = rules  # maps patterns to key-uninstantiated value maps ("rules")
         self.globes = globes
         self.dry_run = dry_run
         self.always_build_all = always_build_all
+        self.always_build_these = always_build_these
         self.pretend_up_to_date = pretend_up_to_date
         # Create locks for the building phase:
         self.target_lock = defaultdict(Lock)
@@ -971,11 +972,17 @@ def produce(args=[]):
             raise ProduceError(
                 "Don't know what to produce. Specify a target on the command "
                 "line or a default target in produce.ini")
+    # Add command-line targets to set of targets to build unconditionally, if
+    # desired:
+    if args.always_build_specified:
+        always_build_these = set(targets)
+    else:
+        always_build_these = set()
     # Execute prelude, with globes providing the name context:
     exec(globes.get('prelude', ''), globes)
     # Produce:
     production = Production(targets, rules, globes, args.dry_run,
-                            args.always_build, args.jobs,
+                            args.always_build, always_build_these, args.jobs,
                             args.pretend_up_to_date)
     production.produce(targets, args.always_build_specified)
 
