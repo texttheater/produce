@@ -30,18 +30,11 @@ from tempfile import NamedTemporaryFile
 ### PLANNED FEATURES
 
 
-# TODO change log output to be both friendlier to the human eye and more
-# machine-readable. Then write unit tests that check for not doing the same
-# thing twice, e.g. when two targets are outputs of the same IRule or when a
-# recipe fails for a target that multiple other targets depend on. Then,
-# finally, merge feat/outputs into master.
 # TODO includes
 # TODO variation on the file rule type that unconditionally runs the recipe
 # but with a temp file with target, then percolates dirtiness only if the new
 # file differs from the existing version - e.g. for files that depend on data
 # from a database.
-# TODO flat producing: run the recipe of the target, touch all existing
-# dependencies
 # TODO optionally delete intermediate files
 # TODO rename private members
 
