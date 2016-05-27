@@ -745,7 +745,7 @@ class Production:
         # Abort flag:
         self.killed = False
 
-    def add_target(self, target, beam, always_build_specified):
+    def add_target(self, target, beam):
         # Catch cyclic dependencies:
         if target in beam:
             raise ProduceError('cyclic dependency: {}'.format(' -> '.join(
@@ -779,7 +779,7 @@ class Production:
         if 'depfile' in irule:
             ddep = irule['depfile']
             # Add it recursively:
-            self.add_target(ddep, beam + [target], False)
+            self.add_target(ddep, beam + [target])
             # Make sure it's up to date:
             producer = Producer(self, ddep)
             future = producer.build_if_required()
@@ -789,7 +789,7 @@ class Production:
         ddeps = list_ddeps(irule)
         debug(2, '%s <- %s', target, ddeps)
         for ddep in ddeps:
-            self.add_target(ddep, beam + [target], False)
+            self.add_target(ddep, beam + [target])
         if ddeps:
             max_ddep_time = max([self.target_time[ddep] for ddep in ddeps])
         else:
@@ -812,7 +812,7 @@ class Production:
         # dependencies, all of which are at this point guaranteed to have been
         # added:
         out_of_date = self._check_if_out_of_date(target, target_type, ddeps,
-                                                 time, always_build_specified)
+                                                 time)
         # Store information about this target:
         self.targets.append(target)
         self.target_outputs[target] = outputs
@@ -823,8 +823,7 @@ class Production:
         if missing:
             self.missing_targets.add(target)
 
-    def _check_if_out_of_date(self, target, target_type, ddeps, time,
-                              always_build_specified):
+    def _check_if_out_of_date(self, target, target_type, ddeps, time):
         if target_type == 'task':
             debug(2, '%s is out of date because it is a task', target)
             return True
@@ -846,7 +845,7 @@ class Production:
             debug(2, '%s is out of date because we are in "always build" mode',
                   target)
             return True
-        if always_build_specified:
+        if target in self. always_build_these:
             debug(2, '%s is out of date because we are in "always build '
                   'specified" mode', target)
             return True
@@ -911,7 +910,7 @@ class Production:
                 debug(2, 'Adjusting time of %s', ddep)
                 touch(ddep, now() + 1)
 
-    def produce(self, targets, always_build_specified=False):
+    def produce(self, targets):
         """
         After adding all targets, call this method to produce them. High-level
         method responsible for error handling and clean aborts.
@@ -930,7 +929,7 @@ class Production:
             # as it's added. Advantages: more elegant, dependency files could
             # be built concurrently.
             for target in targets:
-                self.add_target(target, [], always_build_specified)
+                self.add_target(target, [])
             debug(3, 'Changed direct dependencies: %s', self.changed_ddeps)
             # Phase 2: build all we need to build
             # TODO Here we'd then not run the producers, just wait for them to
@@ -984,7 +983,7 @@ def produce(args=[]):
     production = Production(targets, rules, globes, args.dry_run,
                             args.always_build, always_build_these, args.jobs,
                             args.pretend_up_to_date)
-    production.produce(targets, args.always_build_specified)
+    production.produce(targets)
 
 
 if __name__ == '__main__':
