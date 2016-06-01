@@ -838,7 +838,7 @@ class Production:
             debug(2, '%s is out of date because we are in "always build" mode',
                   target)
             return True
-        if target in self. always_build_these:
+        if target in self.always_build_these:
             debug(2, '%s is out of date because we are in "always build '
                   'specified" mode', target)
             return True
@@ -934,9 +934,10 @@ class Production:
         finally:
             # Phase 3: adjust times of dependencies of targets that were built,
             # correcting for time inconsistencies caused by pretend targets:
-            for target in self.built_targets:
-                debug(2, 'Adjusting times for built target %s', target)
-                self._adjust_times_for(target)
+            if not self.dry_run:
+                for target in self.built_targets:
+                    debug(2, 'Adjusting times for built target %s', target)
+                    self._adjust_times_for(target)
 
 
 ### MAIN
