@@ -8,7 +8,6 @@ https://github.com/texttheater/produce/
 
 import argparse
 import ast
-import asyncio
 import atexit
 import errno
 import logging
@@ -21,8 +20,9 @@ import subprocess
 import sys
 import time
 
-from asyncio import BoundedSemaphore, Lock
+from threading import RLock
 from collections import defaultdict, OrderedDict
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
 from tempfile import NamedTemporaryFile
 
@@ -39,39 +39,19 @@ from tempfile import NamedTemporaryFile
 # TODO rename private members
 
 
-### CLEANUP
-
-# Make sure the event loop is closed before the program exits so we don't get
-# a resource warning or hit this bug: https://bugs.python.org/issue23548
-# Also need to handle the case where the event loop is already gone for some
-# reason. asyncio does make one jump through hoops. >:-(
-
-
-def close_event_loop():
-    try:
-        loop = asyncio.get_event_loop()
-    except (RuntimeError, AssertionError):
-        return
-    loop.close()
-
-
-atexit.register(close_event_loop)
-
-
 ### UTILITIES
 
 
-def get_results(tasks):
+def get_results(futures):
     """
-    Returns a list of the results of the given asyncio.Task objects. It also
-    makes sure *all* their exceptions are retrieved, but only the first is
-    re-raised.
+    Returns a list of the results of the given futures. It also makes sure
+    *all* their exceptions are retrieved, but only the first is re-raised.
     """
     exception = None
     results = []
-    for task in tasks:
+    for future in futures:
         try:
-            results.append(task.result())
+            results.append(future.result())
         except BaseException as e:
             if exception is None:
                 exception = e
@@ -555,7 +535,7 @@ class Producer:
 
     """
     A producer is an "actor" in charge of producing a single target. This is
-    done by running its coroutine build_if_required to completion.
+    done by running its method build_if_required.
     """
 
     def __init__(self, production, target, depth=0):
@@ -564,7 +544,6 @@ class Producer:
         self.depth = depth
         self.exception = None
 
-    @asyncio.coroutine
     def build_if_required(self):
         """
         (Re)builds the target of this producer unless it is already up to date.
@@ -587,34 +566,37 @@ class Producer:
             # stack.
             for lockable in lockables:
                 debug(3, 'locking %s', lockable)
-                lock = self.production.target_lock[lockable]
-                stack.enter_context((yield from lock))
+                with self.production.lock:
+                    lock = self.production.target_lock[lockable]
+                stack.enter_context(lock)
                 debug(3, 'locked %s', lockable)
-            # Check if the target still needs to be built:
-            # If the target is up-to-date and non-missing, we're done:
-            if not (self.production.is_out_of_date(self.target) or
-                    self.production.is_missing(self.target)):
-                return False
-            # If building this target encountered an exception before, we
-            # also raise it, in case this coroutine completes earlier than the
-            # one that originally raised it. TODO Is that actually possible?
-            if self.target in self.production.target_exception:
-                raise self.production.target_exception[self.target]
+            with self.production.lock:
+                # Check if the target still needs to be built:
+                # If the target is up-to-date and non-missing, we're done:
+                if not (self.production.is_out_of_date(self.target) or
+                        self.production.is_missing(self.target)):
+                    return False
+                # If building this target encountered an exception before, we
+                # also raise it, in case this coroutine completes earlier than the
+                # one that originally raised it. TODO Is that actually possible?
+                if self.target in self.production.target_exception:
+                    raise self.production.target_exception[self.target]
             # Build the target:
             try:
-                yield from self._build()
+                self._build()
             except Exception as e:
-                self.production.target_exception[self.target] = e
+                with self.production.lock:
+                    self.production.target_exception[self.target] = e
                 raise e
-            # Mark all outputs as now up-to-date and non-missing:
-            for output in outputs | set((self.target,)):
-                self.production.out_of_date_targets.discard(output)
-                self.production.missing_targets.discard(output)
-            # Mark target as built:
-            self.production.built_targets.add(self.target)
+            with self.production.lock:
+                # Mark all outputs as now up-to-date and non-missing:
+                for output in outputs | set((self.target,)):
+                    self.production.out_of_date_targets.discard(output)
+                    self.production.missing_targets.discard(output)
+                # Mark target as built:
+                self.production.built_targets.add(self.target)
         return True
 
-    @asyncio.coroutine
     def _build(self):
         """
         If it has been decided that a target is out of date, this is the
@@ -625,14 +607,11 @@ class Producer:
         if self.target in self.production.pretend_up_to_date:
             return  # TODO need to raise error somewhere if target is a file and doesn't exist
         # Make sure dependencies are up to date:
-        yield from self.production._produce(
-            self.production.target_ddeps[self.target],
-            depth=self.depth + 1)
-        # Run recipe. Semaphore limits number of parallel recipes:
-        with (yield from self.production.build_sema):
-            yield from self._run_recipe()
+        self.production._produce(self.production.target_ddeps[self.target],
+                                 depth=self.depth + 1)
+        # Run recipe.
+        self._run_recipe()
 
-    @asyncio.coroutine
     def _run_recipe(self):
         """
         This is where it really happens: the recipe for a target is run, and we
@@ -670,11 +649,8 @@ class Producer:
                 with NamedTemporaryFile(mode='w') as recipefile:
                     recipefile.write(recipe)
                     recipefile.flush()
-                    process = yield from asyncio.create_subprocess_exec(
-                        executable, recipefile.name)
-                    yield from asyncio.wait(
-                        (process.wait(),
-                         self.production.supervise(process)))
+                    process = subprocess.Popen([executable, recipefile.name])
+                    self.production.supervise(process)
                     debug(3, 'Exit code: %s', process.returncode)
                 if process.returncode != 0:
                     # Kill the production to prevent new recipes from running
@@ -716,9 +692,9 @@ class Production:
         self.always_build_these = always_build_these
         self.pretend_up_to_date = pretend_up_to_date
         # Create locks for the building phase:
-        self.target_lock = defaultdict(Lock)
+        self.target_lock = defaultdict(RLock)
         debug(3, 'using up to %s threads', jobs)
-        self.build_sema = BoundedSemaphore(jobs)
+        self.executor = ThreadPoolExecutor(jobs)
         # Initialize fields to store information about individual targets:
         self.targets = []
         self.target_outputs = {}
@@ -737,6 +713,8 @@ class Production:
         self.changed_ddeps = {}
         # Abort flag:
         self.killed = False
+        # Lock to help with external synchronization of attribute access:
+        self.lock = RLock()
 
     def add_target(self, target, beam):
         # Catch cyclic dependencies:
@@ -775,8 +753,7 @@ class Production:
             self.add_target(ddep, beam + [target])
             # Make sure it's up to date:
             producer = Producer(self, ddep)
-            future = producer.build_if_required()
-            asyncio.get_event_loop().run_until_complete(future)
+            producer.build_if_required().result()
             # TODO do this asynchronously like for normal targets
         # Determine other dependencies and add them recursively:
         ddeps = list_ddeps(irule)
@@ -851,36 +828,33 @@ class Production:
     def is_missing(self, target):
         return target in self.missing_targets
 
-    @asyncio.coroutine
     def _produce(self, targets, depth=0):
         """
         Internally used method for producing a list of targets. Returns True if
         something needed to be done, False if all targets were already up to
         date.
         """
-        if not targets:
-            return False  # asyncio.wait doesn't like empty sequences
         # Build requested targets in parallel:
         producers = [Producer(self, target, depth=depth) for target in targets]
-        tasks = [asyncio.Task(producer.build_if_required())
-                 for producer in producers]
-        yield from asyncio.wait(tasks)
-        return any(get_results(tasks))
+        futures = [self.executor.submit(producer.build_if_required)
+                   for producer in producers]
+        # XXX need to reserve an execution spot for the currently running thread, otherwise this deadlocks as soon as the dependency tree depth exceeds the number of jobs.
+        return any(get_results(futures))
 
-    @asyncio.coroutine
     def supervise(self, process):
         """
         This coroutine periodically checks whether the Production is killed and
-        if so, kills the process given as argument. It returns when the process
-        is done.
+        if so, kills the process given as argument. It returns the return code
+        of the process when the process is done.
         """
+        debug(3, 'supervising')
         while True:
-            yield from asyncio.sleep(0.05)
-            if process.returncode is not None:
-                return
             if self.killed:
                 process.kill()
-                # FIXME this doesn't always kill all child processes
+            try:
+                return process.wait(timeout=0.05)
+            except subprocess.TimeoutExpired:
+                pass
 
     def _adjust_times_for(self, target):
         for ddep in self.target_ddeps[target]:
@@ -907,15 +881,17 @@ class Production:
         """
         After adding all targets, call this method to produce them. High-level
         method responsible for error handling and clean aborts.
+
+        Warning to callers: this method may only be called from the main
+        thread, and any custom signal handlers for SIGTERM, SIGHUP and SIGINT
+        will be gone after it runs. They will be reset to the defaults.
         """
-        loop = asyncio.get_event_loop()
+        def handle_signal(signal, stackframe):
+            self.killed = True
 
-        def handle_signal(production):
-            production.killed = True
-
-        loop.add_signal_handler(signal.SIGTERM, handle_signal, self)
-        loop.add_signal_handler(signal.SIGHUP, handle_signal, self)
-        loop.add_signal_handler(signal.SIGINT, handle_signal, self)
+        signal.signal(signal.SIGTERM, handle_signal)
+        signal.signal(signal.SIGHUP, handle_signal)
+        signal.signal(signal.SIGINT, handle_signal)
         try:
             # Phase 1: build dependency graph and gather information
             # TODO We could probably already start building each target as soon
@@ -927,9 +903,7 @@ class Production:
             # Phase 2: build all we need to build
             # TODO Here we'd then not run the producers, just wait for them to
             # finish. How? Via centrally kept queues?
-            task = asyncio.Task(self._produce(targets))
-            loop.run_until_complete(asyncio.wait((task,)))
-            if not task.result():
+            if not self._produce(targets):
                 logging.info('all targets are up to date')
         finally:
             # Phase 3: adjust times of dependencies of targets that were built,
@@ -938,6 +912,9 @@ class Production:
                 for target in self.built_targets:
                     debug(2, 'Adjusting times for built target %s', target)
                     self._adjust_times_for(target)
+            signal.signal(signal.SIGTERM, signal.SIG_DFL)
+            signal.signal(signal.SIGHUP, signal.SIG_DFL)
+            signal.signal(signal.SIGINT, signal.SIG_DFL)
 
 
 ### MAIN
