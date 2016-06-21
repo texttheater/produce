@@ -753,7 +753,7 @@ class Production:
             self.add_target(ddep, beam + [target])
             # Make sure it's up to date:
             producer = Producer(self, ddep)
-            producer.build_if_required().result()
+            producer.build_if_required()
             # TODO do this asynchronously like for normal targets
         # Determine other dependencies and add them recursively:
         ddeps = list_ddeps(irule)
