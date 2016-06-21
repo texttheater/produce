@@ -838,8 +838,16 @@ class Production:
         producers = [Producer(self, target, depth=depth) for target in targets]
         futures = [self.executor.submit(producer.build_if_required)
                    for producer in producers]
-        # XXX need to reserve an execution spot for the currently running thread, otherwise this deadlocks as soon as the dependency tree depth exceeds the number of jobs.
-        return any(get_results(futures))
+        # XXX: hacky "solution" to the nested parallelism problem. Increase the
+        # worker limit temporarily. Not a real solution because it creates a
+        # race condition; increase/decrease may conflict.
+        try:
+            with self.lock:
+                self.executor._max_workers += 1
+            return any(get_results(futures))
+        finally:
+            with self.lock:
+                self.executor._max_workers -= 1
 
     def supervise(self, process):
         """
