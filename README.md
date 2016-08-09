@@ -603,6 +603,57 @@ rule accidentally matches something that is not its output:
     dep.txt = data.txt
     recipe = split -n 4 %{txt}
 
+#### “Sideways” dependencies
+
+Suppose there is a target A that has some additional output file B. What if a
+target C wants to declare a dependency on B? For this to work, there must be a
+rule matching B. B, of course, is produced when A is produced. So, effectively,
+in order to produce B, A must be produced. We can express this as a dependency:
+B depends on A. You can write a rule that will tell Produce to produce A when B
+is requested:
+
+    [B]
+    dep.a = A
+
+(TODO: What if A is up to date but B does not exist?)
+
+Such a rule only serves to “guide” Produce from B to A. It cannot contain its
+own recipe. This would not make the sense as it is the rule for A that creates
+B. If you included a recipe, Produce would complain about a cyclic dependency.
+
+Here is a more concrete example: the rule for `paper.pdf` produces an
+additional output `paper.aux`. Another rule, for `paper.info`, depends on
+`paper.aux`. In order for Produce to be able to satisfy this dependency,
+`paper.aux` is declared as depending on `paper.pdf`.
+
+    [paper.info]
+    dep.aux = paper.aux
+    recipe = cat %{aux} | ./my_tool > %{target}
+
+    [paper.aux]
+    dep.pdf = paper.pdf
+
+    [paper.pdf]
+    dep.tex = paper.tex
+    outputs = paper.aux
+    recipe =
+        pdflatex paper
+
+There is one final problem here: after running the recipe for `paper.pdf`, the
+modification time of `paper.pdf` may well be greater than that of `paper.aux`.
+Since we declared `paper.aux` dependent on `paper.pdf`, this means that
+`paper.aux` appears as out of date to Produce even though we just produced it.
+A simple and effective way to prevent this is to include `touch %{outputs}` as 
+the last line of any rule with multiple outputs. The last rule above thus
+becomes:
+
+    [paper.pdf]
+    dep.tex = paper.tex
+    outputs = paper.aux
+    recipe =
+        pdflatex paper
+        touch %{outputs}
+
 ### All special attributes at a glance
 
 For your reference, here are all the rule attributes that currently have a
