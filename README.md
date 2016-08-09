@@ -9,7 +9,7 @@ but many variable parts, e.g. to indicate experimental parameters.
 
 <!-- START doctoc generated TOC please keep comment here to allow auto update -->
 <!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
-**Table of Contents**  *generated with [DocToc](http://doctoc.herokuapp.com/)*
+**Table of Contents** 
 
 - [Requirements](#requirements)
 - [Obtaining Produce](#obtaining-produce)
@@ -29,6 +29,7 @@ but many variable parts, e.g. to indicate experimental parameters.
   - [The prelude](#the-prelude)
   - [Dependency files](#dependency-files)
   - [Rules with multiple outputs](#rules-with-multiple-outputs)
+    - [“Sideways” dependencies](#sideways-dependencies)
   - [All special attributes at a glance](#all-special-attributes-at-a-glance)
     - [In rules](#in-rules)
     - [In the global section](#in-the-global-section)
