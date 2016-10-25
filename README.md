@@ -604,6 +604,17 @@ rule accidentally matches something that is not its output:
     dep.txt = data.txt
     recipe = split -n 4 %{txt}
 
+Instead of a single `outputs` attribute, separate attributes with the `out.`
+prefix can be used, and both styles can also be mixed, similar to
+`dep.`/`deps`. Here is an example of a rule using the `out.` style to declare
+that while producing a `.pdf` file it will also produce an `.aux` file:
+
+    [%{name}.pdf]
+    dep.tex = %{name}.tex
+    out.aux = %{name}.aux
+    recipe =
+        pdflatex %{tex}
+
 #### “Sideways” dependencies
 
 Suppose there is a target A that has some additional output file B. What if a
@@ -711,6 +722,8 @@ special meaning to Produce:
     <a href="#rules-expansions-escaping-and-comments">Rules, expansions, escaping and comments</a>.</dd>
     <dt><code>shell</code></dt>
     <dd>See <a href="#shell-choosing-the-recipe-interpreter"><code>shell</code>: choosing the recipe interpreter</a></dd>
+    <dt><code>out.*</code></dt>
+    <dd>See <a href="#rules-with-multiple-outputs">Rules with multiple outputs</a></dd>
     <dt><code>outputs</code></dt>
     <dd>See <a href="#rules-with-multiple-outputs">Rules with multiple outputs</a></dd>
 </dl>
