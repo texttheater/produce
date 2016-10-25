@@ -543,6 +543,16 @@ def list_ddeps(irule):
     return result
 
 
+def list_outputs(irule):
+    result = []
+    for key, value in irule.items():
+        if key.startswith('out.'):
+            result.append(value)
+        elif key == 'outputs':
+            result.extend(shlex.split(value))
+    return result
+
+
 def read_depfile(filename):
     with open(filename) as f:
         return list(map(str.strip, f))
@@ -751,10 +761,7 @@ class Production:
         # Store it directly (we need it for spotting harmless soft cycles):
         self.target_irule[target] = irule
         # Determine outputs:
-        if 'outputs' in irule:
-            outputs = shlex.split(irule['outputs'])
-        else:
-            outputs = []
+        outputs = list_outputs(irule)
         # Catch "soft cyclic dependencies". We don't want to allow a target to
         # depend on a rule that will produce it as a side output: the target
         # would be built twice by the same production, which is crazy and

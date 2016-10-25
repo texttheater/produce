@@ -27,3 +27,23 @@ class MultipleOutputsTest(prodtest.ProduceTestCase):
             self.produce('c.txt', 'd.txt')
         self.assertEqual(len(l.output), 2)
         self.assertDirectoryContents(['produce.ini', 'Makefile', 'c.txt', 'd.txt'])
+
+    def test_with_2(self):
+        """
+        Same, but using the out. prefix instead of the outputs attribute.
+        """
+        self.assertDirectoryContents(['produce.ini', 'Makefile'])
+        with self.assertLogs(logger='produce', level='INFO') as l:
+            self.produce('e.txt', 'f.txt')
+        self.assertEqual(len(l.output), 2)
+        self.assertDirectoryContents(['produce.ini', 'Makefile', 'e.txt', 'f.txt'])
+
+    def test_with_3(self):
+        """
+        Same, mixing out. and outputs.
+        """
+        self.assertDirectoryContents(['produce.ini', 'Makefile'])
+        with self.assertLogs(logger='produce', level='INFO') as l:
+            self.produce('g.txt', 'h.txt', 'i.txt')
+        self.assertEqual(len(l.output), 2)
+        self.assertDirectoryContents(['produce.ini', 'Makefile', 'g.txt', 'h.txt', 'i.txt'])
