@@ -752,7 +752,7 @@ exist.
 A number of options can be used to control Produce’s behavior, as listed in its
 help message:
 
-    usage: produce [-h] [-B] [-d] [-f FILE] [-j JOBS] [-n] [-s] [-u FILE]
+    usage: produce [-h] [-B | -b] [-d] [-f FILE] [-j JOBS] [-n] [-u FILE]
                    [target [target ...]]
     
     positional arguments:
@@ -761,14 +761,18 @@ help message:
     
     optional arguments:
       -h, --help            show this help message and exit
-      -B, --always-build    Unconditionally build all targets
+      -B, --always-build    Unconditionally build all specified targets and their
+                            dependencies
+      -b, --always-build-specified
+                            Unconditionally build all specified targets, but treat
+                            their dependencies normally (only build if out of
+                            date)
       -d, --debug           Print debugging information. Give this option multiple
                             times for more information.
       -f FILE, --file FILE  Use FILE as a Producefile
       -j JOBS, --jobs JOBS  Specifies the number of jobs (recipes) to run
-                            simultaneously.
+                            simultaneously
       -n, --dry-run         Print status messages, but do not run recipes
-      -s, --silent          Don't print the commands that are executed
       -u FILE, --pretend-up-to-date FILE
                             Do not rebuild FILE or its dependencies (unless they
                             are also depended on by other targets) even if out of
