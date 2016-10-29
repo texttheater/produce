@@ -686,14 +686,17 @@ class Producer:
                         (process.wait(),
                          self.production.supervise(process)))
                     debug(3, 'Exit code: %s', process.returncode)
-                if process.returncode != 0:
-                    # Kill the production to prevent new recipes from running
-                    # and cause the supervisor routines to kill running ones:
-                    self.production.killed = True
-                    raise ProduceError('recipe failed: {}'.format(recipe))
-                success = True
-                # TODO check here if file was created for file rules, raise
-                # exception if not?
+                if process.returncode == 0:
+                    success = True
+                    # TODO check here if file was created for file rules, raise
+                    # exception if not?
+                else:
+                    if not self.production.killed:
+                        # Kill the production to prevent new recipes from
+                        # running and cause the supervisor routines to kill
+                        # running ones:
+                        self.production.killed = True
+                        raise ProduceError('recipe failed: {}'.format(recipe))
             finally:
                 if not success:
                     if irule['type'] == 'file':
