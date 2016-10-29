@@ -1,11 +1,10 @@
 ![Produce logo](img/logo/Produce_Logo_300.png)
 ==============================================
 
-Produce is an incremental build system for the command line, like Make or redo.
-It strives to be simple and user-friendly. It is less geared towards compiling
-code, and more towards processing data and running sets of machine learning
-experiments. Specifically, it works well with filenames that have not just one
-but many variable parts, e.g. to indicate experimental parameters.
+Produce is an incremental build system for the command line, like Make or redo,
+but different: it is scriptable in Python and it supports multiple variable
+parts in file names. This makes it ideal for doing things beyond compiling
+code, like setting up replicable scientific experiments.
 
 <!-- START doctoc generated TOC please keep comment here to allow auto update -->
 <!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
