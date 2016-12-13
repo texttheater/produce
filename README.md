@@ -33,9 +33,9 @@ code, like setting up replicable scientific experiments.
   - [Dependency files](#dependency-files)
   - [Rules with multiple outputs](#rules-with-multiple-outputs)
     - [“Sideways” dependencies](#sideways-dependencies)
-  - [All special attributes at a glance](#all-special-attributes-at-a-glance)
-    - [In rules](#in-rules)
-    - [In the global section](#in-the-global-section)
+- [All special attributes at a glance](#all-special-attributes-at-a-glance)
+  - [In rules](#in-rules)
+  - [In the global section](#in-the-global-section)
 - [Internals](#internals)
   - [The build algorithm](#the-build-algorithm)
 - [Getting in touch](#getting-in-touch)
@@ -756,12 +756,12 @@ becomes:
         pdflatex paper
         touch %{outputs}
 
-### All special attributes at a glance
+## All special attributes at a glance
 
 For your reference, here are all the rule attributes that currently have a
 special meaning to Produce:
 
-#### In rules
+### In rules
 
 <dl>
     <dt><code>target</code></dt>
@@ -818,7 +818,7 @@ special meaning to Produce:
     <dd>See <a href="#rules-with-multiple-outputs">Rules with multiple outputs</a></dd>
 </dl>
 
-#### In the global section
+### In the global section
 
 <dl>
     <dt><code>default</code></dt>
