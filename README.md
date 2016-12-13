@@ -33,6 +33,7 @@ code, like setting up replicable scientific experiments.
   - [Dependency files](#dependency-files)
   - [Rules with multiple outputs](#rules-with-multiple-outputs)
     - [“Sideways” dependencies](#sideways-dependencies)
+  - [Producing the outputs for all inputs](#producing-the-outputs-for-all-inputs)
 - [All special attributes at a glance](#all-special-attributes-at-a-glance)
   - [In rules](#in-rules)
   - [In the global section](#in-the-global-section)
