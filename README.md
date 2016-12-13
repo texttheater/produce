@@ -22,7 +22,11 @@ code, like setting up replicable scientific experiments.
   - [Multiple wildcards, regular expressions and matching conditions](#multiple-wildcards-regular-expressions-and-matching-conditions)
   - [Special targets vs. special attributes](#special-targets-vs-special-attributes)
   - [Python expressions and global variables](#python-expressions-and-global-variables)
-- [Reference of advanced topics](#reference-of-advanced-topics)
+- [Running Produce](#running-produce)
+  - [Status and debugging messages](#status-and-debugging-messages)
+  - [Error handling and aborting](#error-handling-and-aborting)
+  - [How targets are matched against rules](#how-targets-are-matched-against-rules)
+- [Advanced usage](#advanced-usage)
   - [Whitespace and indentation in values](#whitespace-and-indentation-in-values)
   - [`shell`: choosing the recipe interpreter](#shell-choosing-the-recipe-interpreter)
   - [The prelude](#the-prelude)
@@ -32,10 +36,6 @@ code, like setting up replicable scientific experiments.
   - [All special attributes at a glance](#all-special-attributes-at-a-glance)
     - [In rules](#in-rules)
     - [In the global section](#in-the-global-section)
-- [Running Produce](#running-produce)
-  - [Status and debugging messages](#status-and-debugging-messages)
-  - [Error handling and aborting](#error-handling-and-aborting)
-  - [How targets are matched against rules](#how-targets-are-matched-against-rules)
 - [Internals](#internals)
   - [The build algorithm](#the-build-algorithm)
 - [Getting in touch](#getting-in-touch)
@@ -477,8 +477,99 @@ thus named with the empty string. The attributes here define global variables
 accessible from all rules. The global section may only appear once and only at
 the beginning of a Producefile.
 
-Reference of advanced topics
-----------------------------
+Running Produce
+---------------
+
+Produce is invoked from the command line by the command `produce`, usually
+followed by the target(s) to produce. These can be omitted if the Producefile
+specifies one or more default targets. By default, Produce will look for
+`produce.ini` in the current working directory and complain if it does not
+exist.
+
+A number of options can be used to control Produce’s behavior, as listed in its
+help message:
+
+    usage: produce [-h] [-B | -b] [-d] [-f FILE] [-j JOBS] [-n] [-u FILE]
+                   [target [target ...]]
+    
+    positional arguments:
+      target                The target(s) to produce - if omitted, default target
+                            from Producefile is used
+    
+    optional arguments:
+      -h, --help            show this help message and exit
+      -B, --always-build    Unconditionally build all specified targets and their
+                            dependencies
+      -b, --always-build-specified
+                            Unconditionally build all specified targets, but treat
+                            their dependencies normally (only build if out of
+                            date)
+      -d, --debug           Print debugging information. Give this option multiple
+                            times for more information.
+      -f FILE, --file FILE  Use FILE as a Producefile
+      -j JOBS, --jobs JOBS  Specifies the number of jobs (recipes) to run
+                            simultaneously
+      -n, --dry-run         Print status messages, but do not run recipes
+      -u FILE, --pretend-up-to-date FILE
+                            Do not rebuild FILE or its dependencies (unless they
+                            are also depended on by other targets) even if out of
+                            date, but make sure that future invocations of Produce
+                            will still treat them as out of date by increasing the
+                            modification times of their changed dependencies as
+                            necessary.
+
+### Status and debugging messages
+
+When it starts (re)building a target, Produce will tell you so with a status
+message in green where the target is indented according to how deep in the
+dependency graph it is. On successful completion of a target, a similar message
+with `complete` is printed. If an error occurs while a target is being built,
+Produce instead prints an `incomplete` message in red. The latter indicates
+controlled shutdown: the recipe has been killed and incomplete outputs have
+been renamed (see below). If you see a starting message but no `(in)complete`
+message for some target, something went really wrong – this should never
+happen. In that case, better check for yourself if any incomplete outputs are
+still hanging around.
+
+Giving the `-d`/`--debug` option one, two or three times will cause Produce to
+additionally flood your terminal with a few, some more or lots of messages that
+may be helpful for debugging.
+
+### Error handling and aborting
+
+When a recipe fails, i.e. its interpreter returns an exit status other than 0,
+the corresponding target file (if any) may already have been created or
+touched, potentially leading the next invocation of Produce to believe that it
+is up to date, even though it probably doesn’t have the correct contents. Such
+inconsistencies can lead to users tearing their hair out. In order to avoid
+this, Produce will, when a recipe fails, make sure that the target file does
+not stay there. It could just delete it, but that might be unwise because the
+user might want to inspect the output file of the erroneous recipe for
+debugging. So, Produce renames the target file by appending a `~` to the
+filename (a common naming convention for short-lived “backups”).
+
+If multiple recipes are running in parallel and one fails, Produce will kill
+all of them, do the renaming and abort immediately.
+
+The same is true if Produce receives an interrupt signal. So you can safely
+abort a production process in your terminal by pressing `Ctrl+C`.
+
+### How targets are matched against rules
+
+When producing a target, either because asked to by the user or because the
+target is required by another one, Produce will always work through the
+Producefile from top to bottom and use the first rule that matches the target.
+A rule matches a target if both the target pattern matches and the matching
+condition (if any) subsequently evaluates to true.
+
+Note that unlike most INI dialects, Produce allows for multiple sections with
+the same heading. It makes sense to have the same target pattern multiple times
+when there are matching conditions to make subdistinctions.
+
+If no rule matches a target, Produce aborts with an error message.
+
+Advanced usage
+--------------
 
 ### Whitespace and indentation in values
 
@@ -738,97 +829,6 @@ special meaning to Produce:
     <dt><code>prelude</code></dt>
     <dd>See <a href="#the-prelude">The prelude</a></dd>
 </dl>
-
-Running Produce
----------------
-
-Produce is invoked from the command line by the command `produce`, usually
-followed by the target(s) to produce. These can be omitted if the Producefile
-specifies one or more default targets. By default, Produce will look for
-`produce.ini` in the current working directory and complain if it does not
-exist.
-
-A number of options can be used to control Produce’s behavior, as listed in its
-help message:
-
-    usage: produce [-h] [-B | -b] [-d] [-f FILE] [-j JOBS] [-n] [-u FILE]
-                   [target [target ...]]
-    
-    positional arguments:
-      target                The target(s) to produce - if omitted, default target
-                            from Producefile is used
-    
-    optional arguments:
-      -h, --help            show this help message and exit
-      -B, --always-build    Unconditionally build all specified targets and their
-                            dependencies
-      -b, --always-build-specified
-                            Unconditionally build all specified targets, but treat
-                            their dependencies normally (only build if out of
-                            date)
-      -d, --debug           Print debugging information. Give this option multiple
-                            times for more information.
-      -f FILE, --file FILE  Use FILE as a Producefile
-      -j JOBS, --jobs JOBS  Specifies the number of jobs (recipes) to run
-                            simultaneously
-      -n, --dry-run         Print status messages, but do not run recipes
-      -u FILE, --pretend-up-to-date FILE
-                            Do not rebuild FILE or its dependencies (unless they
-                            are also depended on by other targets) even if out of
-                            date, but make sure that future invocations of Produce
-                            will still treat them as out of date by increasing the
-                            modification times of their changed dependencies as
-                            necessary.
-
-### Status and debugging messages
-
-When it starts (re)building a target, Produce will tell you so with a status
-message in green where the target is indented according to how deep in the
-dependency graph it is. On successful completion of a target, a similar message
-with `complete` is printed. If an error occurs while a target is being built,
-Produce instead prints an `incomplete` message in red. The latter indicates
-controlled shutdown: the recipe has been killed and incomplete outputs have
-been renamed (see below). If you see a starting message but no `(in)complete`
-message for some target, something went really wrong – this should never
-happen. In that case, better check for yourself if any incomplete outputs are
-still hanging around.
-
-Giving the `-d`/`--debug` option one, two or three times will cause Produce to
-additionally flood your terminal with a few, some more or lots of messages that
-may be helpful for debugging.
-
-### Error handling and aborting
-
-When a recipe fails, i.e. its interpreter returns an exit status other than 0,
-the corresponding target file (if any) may already have been created or
-touched, potentially leading the next invocation of Produce to believe that it
-is up to date, even though it probably doesn’t have the correct contents. Such
-inconsistencies can lead to users tearing their hair out. In order to avoid
-this, Produce will, when a recipe fails, make sure that the target file does
-not stay there. It could just delete it, but that might be unwise because the
-user might want to inspect the output file of the erroneous recipe for
-debugging. So, Produce renames the target file by appending a `~` to the
-filename (a common naming convention for short-lived “backups”).
-
-If multiple recipes are running in parallel and one fails, Produce will kill
-all of them, do the renaming and abort immediately.
-
-The same is true if Produce receives an interrupt signal. So you can safely
-abort a production process in your terminal by pressing `Ctrl+C`.
-
-### How targets are matched against rules
-
-When producing a target, either because asked to by the user or because the
-target is required by another one, Produce will always work through the
-Producefile from top to bottom and use the first rule that matches the target.
-A rule matches a target if both the target pattern matches and the matching
-condition (if any) subsequently evaluates to true.
-
-Note that unlike most INI dialects, Produce allows for multiple sections with
-the same heading. It makes sense to have the same target pattern multiple times
-when there are matching conditions to make subdistinctions.
-
-If no rule matches a target, Produce aborts with an error message.
 
 Internals
 ---------
