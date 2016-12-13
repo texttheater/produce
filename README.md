@@ -756,6 +756,53 @@ becomes:
         pdflatex paper
         touch %{outputs}
 
+### Producing the outputs for all inputs
+
+Suppose you have a number of input files (say `inputs/input001.txt` to
+`inputs/input100.txt`). Each input can be processed to yield an output file
+(say `models/model001` to `models/model100`) – for example, by the following
+rule:
+
+    [models/model%{num}]
+    dep.input = inputs/input%{num}.txt
+    dep.train = bin/train
+    recipe = ./%{train} %{input} %{target}
+
+Now you would like to automatically produce the model for every input that is
+there. You can do this by writing a _task_, i.e., a rule for a target that is
+not a file but is just invoked. The task for the example might look like this:
+
+    [all_models]
+    type = task
+    deps = %{'models/{}'.format(i.replace('input', 'model').replace('.txt, \
+             '') for i in os.listdir('inputs')}
+
+This task does not need a recipe because all it does is pull in all the models
+through its dependencies. The dependencies are specified through an arbitrary
+Python expression, in this case it looks at the inputs directory and returns
+the names of the models corresponding to each input. It uses the `os` module,
+which needs to be imported. So let’s add a global section with a prelude to do
+this. The whole Producefile then looks like this:
+
+    []
+    prelude =
+        import os
+
+    [models/model%{num}]
+    dep.input = inputs/input%{num}.txt
+    dep.train = bin/train
+    recipe = ./%{train} %{input} %{target}
+
+    [all_models]
+    type = task
+    deps = %{'models/{}'.format(i.replace('input', 'model').replace('.txt, \
+             '') for i in os.listdir('inputs')}
+
+And to produce all models, all you need to do is tell Produce to produce the
+`all_models` task:
+
+    $ produce all_models
+
 ## All special attributes at a glance
 
 For your reference, here are all the rule attributes that currently have a
