@@ -600,10 +600,25 @@ or any other language, that’s no problem. Just specify the interpreter in the
 ### The prelude
 
 If you use Python expressions in your recipes, you will often need to import
-Python modules or define functions to use in these expressions. You can do
-this by putting the imports, function definitions and other Python code into
-the special `prelude` attribute in the
-[global section](#python-expressions-and-global-variables).
+Python modules or define functions to use in these expressions. You can do this
+by putting the imports, function definitions and other Python code into the
+special `prelude` attribute in the [global
+section](#python-expressions-and-global-variables). For example, put this at
+the beginning of your Producefile to import the `errno`, `glob` and `os`
+modules and define a helper function for creating directories.
+
+    []
+    prelude =
+        import errno
+        import glob
+        import os
+
+        def makedirs(path):
+            try:
+                os.makedirs(path)
+            except OSError, error:
+                if error.errno != errno.EEXIST:
+                    raise error
 
 ### Dependency files
 
