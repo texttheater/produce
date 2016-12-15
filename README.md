@@ -590,12 +590,14 @@ Python code and the reason why Produce is no longer using Python’s
 All whitespace at the very beginning and at the very end of an attribute value
 will be stripped away.
 
-### `shell`: choosing the recipe interpreter
+For example, in the following rule, the recipe spans two lines:
 
-By default, recipes are (after doing expansions) handed to the `bash` command
-for execution. If you would rather write your recipe in `zsh`, `perl`, `python`
-or any other language, that’s no problem. Just specify the interpreter in the
-`shell` attribute of the rule.
+    [paper.pdf]
+    dep.tex = paper.tex
+    dep.bib = paper.bib
+    recipe =
+        pdflatex paper
+        pdflatex paper
 
 ### The prelude
 
@@ -619,6 +621,13 @@ modules and define a helper function for creating directories.
             except OSError, error:
                 if error.errno != errno.EEXIST:
                     raise error
+
+### `shell`: choosing the recipe interpreter
+
+By default, recipes are (after doing expansions) handed to the `bash` command
+for execution. If you would rather write your recipe in `zsh`, `perl`, `python`
+or any other language, that’s no problem. Just specify the interpreter in the
+`shell` attribute of the rule.
 
 ### Dependency files
 
