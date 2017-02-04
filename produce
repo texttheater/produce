@@ -692,14 +692,19 @@ class Producer:
                     # exception if not?
                 else:
                     if not self.production.error_raised:
-                        # Kill the production to prevent new recipes from
-                        # running and cause the supervisor routines to kill
-                        # running ones:
-                        self.production.killed = True
                         self.production.error_raised = True
-                        raise ProduceError('recipe failed: {}'.format(recipe))
+                        if self.production.killed:
+                            raise ProduceError('interrupted')
+                        else:
+                            # Kill the production to prevent new recipes from
+                            # running and cause the supervisor routines to kill
+                            # running ones:
+                            self.production.killed = True
+                            raise ProduceError('recipe failed: {}'.format(recipe))
             finally:
-                if not success:
+                if success:
+                    status_info('complete', target, self.depth)
+                else:
                     if irule['type'] == 'file':
                         backup_name = target + '~'
                         debug(2, 'renaming %s to %s', target, backup_name)
@@ -709,7 +714,6 @@ class Producer:
                         debug(2, 'renaming %s to %s', output, backup_name)
                         rename_if_exists(output, backup_name)
                     status_error('incomplete', target, self.depth)
-            status_info('complete', target, self.depth)
 
 
 class Production:
@@ -997,7 +1001,4 @@ if __name__ == '__main__':
         produce(None)
     except ProduceError as e:
         logging.error(e)  # FIXME prints only first line of error message???
-        sys.exit(1)
-    except KeyboardInterrupt as e:
-        logging.error('Interrupted')
         sys.exit(1)
