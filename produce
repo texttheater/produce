@@ -691,11 +691,12 @@ class Producer:
                     # TODO check here if file was created for file rules, raise
                     # exception if not?
                 else:
-                    if not self.production.killed:
+                    if not self.production.error_raised:
                         # Kill the production to prevent new recipes from
                         # running and cause the supervisor routines to kill
                         # running ones:
                         self.production.killed = True
+                        self.production.error_raised = True
                         raise ProduceError('recipe failed: {}'.format(recipe))
             finally:
                 if not success:
@@ -748,8 +749,9 @@ class Production:
         # Maps a dependent to a changed direct dependency that causes it to be
         # out of date:
         self.changed_ddeps = {}
-        # Abort flag:
+        # Abort flags:
         self.killed = False
+        self.error_raised = False
 
     def add_target(self, target, beam):
         # Catch cyclic dependencies:
