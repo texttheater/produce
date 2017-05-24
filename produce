@@ -475,6 +475,7 @@ def produce_pattern_to_regex(pattern, globes={}):
 
 
 def create_irule(target, rules, globes):
+    debug(3, 'looking for rule to produce %s', target)
     # Go through rules until a pattern matches the target:
     for pattern, avdict in rules:
         match = pattern.match(target)
