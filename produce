@@ -701,7 +701,7 @@ class Producer:
                             # running and cause the supervisor routines to kill
                             # running ones:
                             self.production.killed = True
-                            raise ProduceError('recipe failed: {}'.format(recipe))
+                            raise ProduceError('recipe failed: {}'.format(repr(recipe)))
             finally:
                 if success:
                     status_info('complete', target, self.depth)
