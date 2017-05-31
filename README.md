@@ -702,7 +702,7 @@ creates all four files in each case. Worse, if we run Produce in parallel,
 multiple instances of the recipe may run in parallel and corrupt the data.
 
 The solution is to explicitly declare which files a rule produces, other than
-the target. The `output` attribute serves this purpose. With it, the last rule
+the target. The `outputs` attribute serves this purpose. With it, the last rule
 is rewritten as follows:
 
     [%{chunk}]
