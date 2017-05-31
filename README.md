@@ -290,7 +290,7 @@ can be more convenient not to name the dependencies and list them all on one
 line. This is what the `deps` attribute is for. It is parsed using Python’s
 [`shlex.split`](https://docs.python.org/3/library/shlex.html?highlight=shlex#shlex.split)
 function – consult the Python documentation for escaping rules and such. You
-can also mix `deps.*` attributes and `deps` in one rule.
+can also mix `dep.*` attributes and `deps` in one rule.
 
 Note that, as in many INI dialects, attribute values (here: the recipe) can
 span multiple lines as long as each line after the first is indented. See
