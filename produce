@@ -562,7 +562,6 @@ class Production:
         # TODO signal handler
         self.exception = None
         self.target_result = {} # maps done targets to a ProductionResult or an exception
-        self.adjustables = set() # collects targets whose newness we ignore
         try:
             results = self.produce_targets(targets, [], [], False)
             if any(result.updated for result in results):
@@ -573,10 +572,6 @@ class Production:
             # The exception we catch is not necessarily the one that was first
             # raised - that we store in the exception field.
             raise self.exception
-        finally:
-            if not self.dry_run:
-                for adjustable in self.adjustables:
-                    touch(adjustable, now() + 1)
 
     def register_exception(self, exception):
         """Register an exception that was raised in one of the worker threads.
@@ -611,10 +606,6 @@ class Production:
 
     def always_build_for(self, target):
         return self.always_build or (target in self.always_build_these)
-
-    def register_adjustable(self, target):
-        with self.lock:
-            self.adjustables.add(target)
 
     def is_shutting_down(self):
         return self.exception is not None
@@ -763,8 +754,6 @@ class Production:
                 out_of_date = True
             if result.mtime > mtime(target):
                 out_of_date = True
-                if pretend_up_to_date:
-                    self.register_adjustable(ddep)
 
         # Step 5: abort if up to date or pretending
         if (not out_of_date) or pretend_up_to_date:

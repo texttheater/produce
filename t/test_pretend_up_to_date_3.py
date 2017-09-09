@@ -22,19 +22,16 @@ class PretendUpToDate3Test(ProduceTestCase):
         # Make everything up-to-date again:
         self.assertUpdates((), normal, ('T', 'U'), ('V',))
         # Weirdness grade 2: U changes, then V changes, we pretend U is up to
-        # date, T is rebuilt and then V is touched:
-        print('first')
-        self.assertUpdates(('U', 'V'), pretending, ('T', 'V'), ('U',))
-        self.assertNewer('V', 'T')
-        # And what is that good for? Well, imagine we now delete U.
+        # date, T is rebuilt:
+        self.assertUpdates(('U', 'V'), pretending, ('T',), ('U', 'V'))
+        # Imagine we now delete U.
         self.removeFile('U')
-        # We still want to remember that V has changes T doesn't reflect yet.
-        # That's why we had to touch V.
+        # If we produce normally again, we have to take into account that V has
+        # changes that T doesn't reflect yet. This does indeed happen: because
+        # U doesn't exist, it is rebuilt, and then T has to be rebuilt.
         self.assertUpdates((), normal, ('T', 'U'), ('V',))
         # Weirdness grade 3: same as weirdness grade 2, but we use the -B
         # option. The behavior should be the same.
-        print('second')
-        self.assertUpdates(('U', 'V'), pretending_B, ('T', 'V'), ('U',))
-        self.assertNewer('V', 'T')
+        self.assertUpdates(('U', 'V'), pretending_B, ('T',), ('U', 'V'))
         self.removeFile('U')
         self.assertUpdates((), normal, ('T', 'U'), ('V',))

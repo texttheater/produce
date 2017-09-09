@@ -13,7 +13,7 @@ class PretendUpToDate2Test(ProduceTestCase):
         self.assertDirectoryContents(('produce.ini',))
         self.assertUpdates((), normal, ('S', 'T', 'U', 'V'), ())
         self.assertUpdates(('U', 'V'), normal, ('S', 'T'), ('U', 'V'))
-        # Updates S, but also touches U in order not to forget that T, and
-        # therefore S, is out of date, even if T is deleted in the meantime:
-        self.assertUpdates(('U', 'V'), pretending, ('S', 'U'), ('T', 'V'))
+        # Pretend T is up to date, only S is rebuilt:
+        self.assertUpdates(('U', 'V'), pretending, ('S',), ('T', 'U', 'V'))
+        # Normal again: now T is rebuilt, and so is S
         self.assertUpdates((), normal, ('S', 'T'), ('U', 'V'))
