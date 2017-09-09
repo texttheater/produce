@@ -559,7 +559,6 @@ class Production:
         self.target_locks = collections.defaultdict(threading.Lock)
 
     def produce(self, targets):
-        # TODO signal handler
         self.exception = None
         self.target_result = {} # maps done targets to a ProductionResult or an exception
         try:
@@ -884,14 +883,32 @@ def produce(args=[]):
     production = Production(rules, globes, args.dry_run, args.always_build,
                             always_build_these, args.jobs,
                             args.pretend_up_to_date)
+    if _handle_signals: # HACK, see comment below
+        def handler(signum, frame):
+            production.register_exception(ProduceError('killed'))
+        signal.signal(signal.SIGINT, handler)
+        signal.signal(signal.SIGHUP, handler)
+        signal.signal(signal.SIGTERM, handler)
     production.produce(targets)
 
 
 ### CLI #######################################################################
 
 
+# When using Produce via the CLI, it installs signal handlers to enable a
+# clean shutdown when it is killed. This is not possible when called via API,
+# because signal handlers can only be installed from the main thread, and
+# callers might have their own signal handling strategies. So the signal
+# handling code should go here, except that the handler needs the Production
+# object. So we put the code into the produce method above; here we only set a
+# flag telling it whether to install the handlers or not. It's a bit messy,
+# should be cleaned up once we refactor the API.
+_handle_signals = False
+
+
 if __name__ == '__main__':
     try:
+        _handle_signals = True
         produce(None)
     except ProduceError as e:
         logging.error(e)  # FIXME prints only first line of error message???
