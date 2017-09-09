@@ -730,14 +730,14 @@ class Production:
 
         # Step 1: make depfile up to date, if any
         if 'depfile' in irule:
-            self.produce_targets([irule['depfile']], [target] + beam,
-                                 neutral_targets, pretend_up_to_date)
+            self.produce_targets([irule['depfile']], beam, neutral_targets,
+                                 pretend_up_to_date)
 
         # Step 2: determine direct dependencies
         ddeps = list_ddeps(irule)
 
         # Step 3: make dependencies up to date
-        results = self.produce_targets(ddeps, [target] + beam,
+        results = self.produce_targets(ddeps, beam,
             neutral_targets, pretend_up_to_date)
 
         # Step 4: determine if target is out of date
