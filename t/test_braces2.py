@@ -9,5 +9,5 @@ class BracesTest2(ProduceTestCase):
 
     def test_braces2(self):
         with self.assertRaisesRegex(ProduceError,
-                r'no rule to produce 1/1\.aux'):
+                r'no rule to produce [1-8]/[1-8]\.aux'):
             self.produce('test.pdf')
