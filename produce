@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
 
+
 """
 Produce is a replacement for Make geared towards processing data rather than
 compiling code. Key feature: supports multiple expansions in pattern rules.
 https://github.com/texttheater/produce/
 """
 
+
 import argparse
 import ast
-import atexit
+import collections
+import concurrent.futures
+import contextlib
 import errno
 import logging
 import os
@@ -18,14 +22,12 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
+import threading
 import time
 
-from collections import defaultdict, OrderedDict
-from contextlib import ExitStack
-from tempfile import NamedTemporaryFile
 
-
-### PLANNED FEATURES
+### PLANNED FEATURES ##########################################################
 
 
 # TODO includes
@@ -37,7 +39,7 @@ from tempfile import NamedTemporaryFile
 # TODO rename private members
 
 
-### UTILITIES
+### UTILITIES #################################################################
 
 
 def have_smart_terminal():
@@ -91,7 +93,8 @@ def shlex_join(value):
     return ' '.join((shlex.quote(str(x)) for x in value))
 
 
-### GENERAL LOGGING
+### GENERAL LOGGING ###########################################################
+
 
 # General logging uses the root logger and configures it for each production
 # (using the set_up_logging function). We use log levels INFO and DEBUG. For
@@ -114,7 +117,8 @@ def debug(level, message_format, *parameters):
         logging.debug(message_format, *parameters)
 
 
-### LOGGING FOR STATUS MESSAGES
+### LOGGING FOR STATUS MESSAGES ###############################################
+
 
 # Status messages also use the logging module, but a different logger, called
 # produce. Some unit tests hook into this logger using assertLogs to test that
@@ -186,7 +190,7 @@ def status_error(message, target, depth):
     status_logger.error(StatusMessage(message, target, depth))
 
 
-### ERRORS
+### ERRORS ####################################################################
 
 
 class ProduceError(Exception):
@@ -196,7 +200,7 @@ class ProduceError(Exception):
         self.cause = cause
 
 
-### COMMANDLINE PROCESSING
+### COMMANDLINE PROCESSING ####################################################
 
 
 def process_commandline(args=None):
@@ -239,7 +243,7 @@ def process_commandline(args=None):
     return parser.parse_args(args)
 
 
-### PRODUCEFILE PARSING
+### PRODUCEFILE PARSING #######################################################
 
 
 SECTIONHEAD_PATTERN = re.compile(r'^\[(.*)\]\s*$')
@@ -307,17 +311,18 @@ def interpret_sections(sections):
         if at_beginning:
             at_beginning = False
             if name == '':
-                raw_globes = OrderedDict(avpairs)
+                raw_globes = collections.OrderedDict(avpairs)
                 continue
         if name == '':
             raise ProduceError('The global section (headed []) is only allowed'
                                ' at the beginning of the Producefile.')
         else:
-            rules.append((section_name_to_regex(name), OrderedDict(avpairs)))
+            rules.append((section_name_to_regex(name),
+                          collections.OrderedDict(avpairs)))
     return raw_globes, rules
 
 
-### PATTERN MATCHING AND INTERPOLATION
+### PATTERN MATCHING AND INTERPOLATION ########################################
 
 
 def interpolate(string, varz, ignore_undefined=False, keep_escaped=False):
@@ -426,11 +431,12 @@ def produce_pattern_to_regex(pattern, globes={}):
     return re.compile(regex)
 
 
-### INSTANTIATED RULES
+### INSTANTIATED RULES ########################################################
+
 
 # An instantiated rule is represented by a dict that corresponds to one rule
 # section from the Producefile, with the values already expanded. There are two
-# special keys, target (the target as matched by the section header), and type,
+# special keys: target (the target as matched by the section header), and type,
 # which must be one of file and task and defaults to file.
 
 
@@ -519,10 +525,340 @@ def read_depfile(filename):
         return list(map(str.strip, f))
 
 
-### PRODUCTION
+### PRODUCTION ################################################################
 
 
-### MAIN
+class ProductionResult:
+    
+    """The result of producing one target.
+
+    Contains two fields: updated is True if the target was updated, False
+    otherwise. mtime contains the target's modification time.
+    """
+
+    def __init__(self, updated, mtime):
+        self.updated = updated
+        self.mtime = mtime
+
+    def __repr__(self):
+        return 'ProductionResult({}, {})'.format(self.updated, self.mtime)
+
+
+class Production:
+
+    def __init__(self, rules, globes, dry_run, always_build,
+                 always_build_these, jobs, pretend_up_to_date):
+        self.rules = rules
+        self.globes = globes
+        self.dry_run = dry_run
+        self.always_build = always_build
+        self.always_build_these = always_build_these
+        self.semaphore = threading.BoundedSemaphore(jobs)
+        self.pretend_up_to_date = pretend_up_to_date
+        self.lock = threading.Lock()
+        self.target_locks = collections.defaultdict(threading.Lock)
+
+    def produce(self, targets):
+        # TODO signal handler
+        self.exception = None
+        self.target_result = {} # maps done targets to a ProductionResult or an exception
+        self.adjustables = set() # collects targets whose newness we ignore
+        try:
+            results = self.produce_targets(targets, [], [], False)
+            if any(result.updated for result in results):
+                pass
+            else:
+                logging.info('all targets are up to date')
+        except BaseException:
+            # The exception we catch is not necessarily the one that was first
+            # raised - that we store in the exception field.
+            raise self.exception
+        finally:
+            if not self.dry_run:
+                for adjustable in self.adjustables:
+                    touch(adjustable, now() + 1)
+
+    def register_exception(self, exception):
+        """Register an exception that was raised in one of the worker threads.
+
+        This method is thread-safe. The first registered exception will be
+        stored to be re-raised by the produce method in the end. Storing an
+        exception will trigger shutdown, i.e., the worker threads notice it and
+        abort as soon as they can. Any further registered exceptions are
+        ignored.
+        """
+        with self.lock:
+            if self.exception is None:
+                self.exception = exception
+
+    def create_irule(self, target):
+        return create_irule(target, self.rules, self.globes)
+
+    def get_target_lock(self, target):
+        with self.lock:
+            return self.target_locks[target]
+
+    def get_result(self, target):
+        with self.lock:
+            return self.target_result.get(target, None)
+
+    def set_result(self, target, result):
+        with self.lock:
+            self.target_result[target] = result
+
+    def pretend_up_to_date_for(self, target):
+        return target in self.pretend_up_to_date
+
+    def always_build_for(self, target):
+        return self.always_build or (target in self.always_build_these)
+
+    def register_adjustable(self, target):
+        with self.lock:
+            self.adjustables.add(target)
+
+    def is_shutting_down(self):
+        return self.exception is not None
+
+    def is_dry_run(self):
+        return self.dry_run
+
+    def produce_targets(self, targets, beam, neutral_targets,
+                        pretend_up_to_date):
+        """produce_targets takes a list of targets and produces them.
+
+        Returns a list of ProductionResult objects.
+        
+        The core logic is delegated to produce_target for each target, each in
+        a separate worker thread. produce_targets is mainly responsible for
+        managing the workers and for handling exceptions.
+
+        produce_targets is recursively called from produce_target in worker
+        threads for producing dependencies, so it must synchronize access to
+        fields.
+        """
+        if not targets:
+            return []
+        exception = None
+        with concurrent.futures.ThreadPoolExecutor(len(targets)) as executor:
+            # TODO can we use a single global executor for efficiency?
+            futures = [executor.submit(self.produce_target, target, beam,
+                                       neutral_targets, pretend_up_to_date)
+                       for target in targets]
+            for future in concurrent.futures.as_completed(futures):
+                e = future.exception()
+                if e is not None:
+                    exception = e
+                    self.register_exception(e)
+        if exception is None:
+            return [future.result() for future in futures]
+        else:
+            raise exception
+                    
+    def produce_target(self, target, beam, neutral_targets,
+                       pretend_up_to_date):
+        """produce_target handles the core production logic for a single
+        top-level target.
+
+        Returns a ProductionResult object.
+
+        Threading logic is kept outside this method as far as possible. It's
+        just an ordinary method that takes an argument and returns a result or
+        raises and exception. It still has to synchronize access to fields
+        because it runs inside worker threads.
+        """
+
+        # Step 1: catch cycles
+        if target in beam:
+            raise ProduceError('cyclic dependency: {}'.format(' <- '.join(
+                [target] + beam)))
+
+        # Step 2: create instantiated rule
+        irule = self.create_irule(target)
+
+        # Step 3: determine side outputs
+        outputs = list_outputs(irule)
+
+        # Step 4: catch soft cycles
+        # We don't want to allow a target to depend on a rule that will produce
+        # it as a side output: the target would be built twice by the same
+        # production, which is crazy and probably indicates a bug. There's an
+        # exception though: if the target has an empty recipe (we call that a
+        # "neutral target"), it may depend on a target that produces it as a
+        # side output. This is useful because it allows side outputs to have
+        # dependencies: they can then declare which target to produce to get
+        # the side output.
+        for output in outputs:
+            if output in beam and output not in neutral_targets:
+                raise ProduceError(
+                    'cyclic dependency: {}; {} has {} as output'.format(
+                        ' <- '.join([target] + beam), target, output))
+
+        # Step 4: lock all outputs
+        lockables = set(outputs)
+        if 'recipe' in irule:
+            lockables.add(target)
+        else:
+            lockables.discard(target) # in case it's in outputs
+        lockables = sorted(lockables) # to prevent deadlocks
+        with contextlib.ExitStack() as stack:
+            # Acquire locks. Release is automatic on leaving the context of the
+            # stack.
+            for lockable in lockables:
+                debug(3, 'locking %s', lockable)
+                stack.enter_context(self.get_target_lock(lockable))
+                debug(3, 'locked %s', lockable)
+
+            # Step 5: abort if target already done
+            result = self.get_result(target)
+            debug(3, 'retrieved result for {}: {}'.format(target, result))
+            if result is None:
+                pass
+            elif isinstance(result, ProductionResult):
+                return result
+            else:
+                raise result
+
+            # Step 6: do target and mark as done
+            try:
+                result = self.do_target(target, irule, outputs, beam,
+                                        neutral_targets, pretend_up_to_date)
+                self.set_result(target, result)
+                debug(3, 'created result for {}: {}'.format(target, repr(result)))
+                return result
+            except BaseException as e:
+                self.set_result(target, e)
+                raise e
+            
+    def do_target(self, target, irule, outputs, beam, neutral_targets,
+            pretend_up_to_date):
+        # Step 0: update beam, neutral_targets, pretend_up_to_date
+        beam = [target] + beam
+        if 'recipe' not in irule:
+            neutral_targets = [target] + neutral_targets
+        pretend_up_to_date = pretend_up_to_date or \
+                self.pretend_up_to_date_for(target)
+
+        # Step 1: make depfile up to date, if any
+        if 'depfile' in irule:
+            self.produce_targets([irule['depfile']], [target] + beam,
+                                 neutral_targets, pretend_up_to_date)
+
+        # Step 2: determine direct dependencies
+        ddeps = list_ddeps(irule)
+
+        # Step 3: make dependencies up to date
+        results = self.produce_targets(ddeps, [target] + beam,
+            neutral_targets, pretend_up_to_date)
+
+        # Step 4: determine if target is out of date
+        out_of_date = False
+        if irule['type'] == 'task':
+            out_of_date = True
+        if self.always_build_for(target):
+            out_of_date = True
+        if irule['type'] == 'file' and not os.path.exists(target):
+            out_of_date = True
+        for ddep, result in zip(ddeps, results):
+            if result.updated:
+                out_of_date = True
+            if result.mtime > mtime(target):
+                out_of_date = True
+                if pretend_up_to_date:
+                    self.register_adjustable(ddep)
+
+        # Step 5: abort if up to date or pretending
+        if (not out_of_date) or pretend_up_to_date:
+            return ProductionResult(False, mtime(target))
+
+        # Step 6: run recipe with semaphore bounding parallel recipes
+        with self.semaphore:
+            self.run_recipe(target, irule, outputs, len(beam) - 1)
+            return ProductionResult(True, mtime(target))
+
+    def run_recipe(self, target, irule, outputs, depth):
+        # Step 1: abort if shutting down
+        if self.is_shutting_down():
+            raise ProduceError('aborting due to shutdown')
+
+        # Step 2: abort if no recipe
+        if not 'recipe' in irule:
+            return
+
+        # Step 3: initial status info
+        if irule['type'] == 'task':
+            status_info('running task', target, depth)
+        else:
+            if os.path.exists(target):
+                status_info('rebuilding file', target, depth)
+            else:
+                status_info('building file', target, depth)
+
+        # Step 4: preprocess recipe and determine executable
+        recipe = irule['recipe']
+        executable = irule.get('shell', 'bash')
+        if recipe.startswith('\n'):
+            recipe = recipe[1:]
+
+        # Step 5: optionally print recipe
+        if debug_level >= 1:
+            print(recipe)
+
+        # Step 6: abort if dry run
+        if self.is_dry_run():
+            return
+
+        # Step 7: remove old backup files, if any
+        if irule['type'] == 'file':
+            backup_name = target + '~'
+            remove_if_exists(backup_name)
+        for output in outputs:
+            backup_name = output + '~'
+            remove_if_exists(backup_name)
+
+        # Step 8: create recipe file
+        with tempfile.NamedTemporaryFile(mode='w') as recipefile:
+            recipefile.write(recipe)
+            recipefile.flush()
+
+            # Step 9: run the recipe; try-finally for cleanup
+            success = False
+            try:
+                proc = subprocess.Popen([executable, recipefile.name])
+                debug(3, 'started subprocess')
+                while True:
+                    try:
+                        debug(3, 'waiting')
+                        proc.wait(0.05)
+                    except subprocess.TimeoutExpired:
+                        pass
+                    if proc.returncode is not None:
+                        break
+                    if self.is_shutting_down():
+                        proc.kill() # FIXME doesn't always kill all child processes
+                if proc.returncode == 0:
+                    success = True
+                else:
+                    raise ProduceError('recipe failed: {}'.format(repr(recipe)))
+            finally:
+                if success:
+                    status_info('complete', target, depth)
+                else:
+                    if irule['type'] == 'file':
+                        backup_name = target + '~'
+                        debug(2, 'renaming %s to %s', target, backup_name)
+                        rename_if_exists(target, backup_name)
+                    for output in outputs:
+                        backup_name = output + '~'
+                        debug(2, 'renaming %s to %s', output, backup_name)
+                        rename_if_exists(output, backup_name)
+                    status_error('incomplete', target, depth)
+
+
+### API #######################################################################
+
+
+# TODO the API mimics the CLI, should maybe provide a better interface using
+# kwargs
 
 
 def produce(args=[]):
@@ -556,10 +892,13 @@ def produce(args=[]):
     # Execute prelude, with globes providing the name context:
     exec(globes.get('prelude', ''), globes)
     # Produce:
-    production = Production(targets, rules, globes, args.dry_run,
-                            args.always_build, always_build_these, args.jobs,
+    production = Production(rules, globes, args.dry_run, args.always_build,
+                            always_build_these, args.jobs,
                             args.pretend_up_to_date)
     production.produce(targets)
+
+
+### CLI #######################################################################
 
 
 if __name__ == '__main__':

@@ -669,6 +669,8 @@ Note that the `.c` file will end up in the dependency list twice, once from
 `dep.src` and once from the dependency file. This does not matter, Produce is
 smart enough not to do the same thing twice.
 
+Warning: dependency files are made up to date even in dry-run mode!
+
 ### Rules with multiple outputs
 
 Sometimes you have a command that creates multiple files at once because their
