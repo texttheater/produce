@@ -744,15 +744,18 @@ class Production:
         out_of_date = False
         if irule['type'] == 'task':
             out_of_date = True
-        if self.always_build_for(target):
+        elif self.always_build_for(target):
             out_of_date = True
-        if irule['type'] == 'file' and not os.path.exists(target):
+        elif irule['type'] == 'file' and not os.path.exists(target):
             out_of_date = True
-        for ddep, result in zip(ddeps, results):
-            if result.updated:
-                out_of_date = True
-            if result.mtime > mtime(target):
-                out_of_date = True
+        else:
+            for result in results:
+                if result.updated:
+                    out_of_date = True
+                    break
+                elif result.mtime > mtime(target):
+                    out_of_date = True
+                    break
 
         # Step 5: abort if up to date or pretending
         if (not out_of_date) or pretend_up_to_date:
