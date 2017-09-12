@@ -176,6 +176,10 @@ Let’s review the basic functionality we expect of a build automation tool:
   right order.
 * Notices when inputs have changed and runs exactly those steps again that are
   needed to bring the outputs up to speed, no more or less.
+
+In addition, some build automation tools satisfy the following requirement
+(Produce currently doesn’t):
+
 * Intermediate files can be deleted without affecting up-to-dateness – if the
   outputs are newer than the inputs, the workflow will not be re-run.
 
