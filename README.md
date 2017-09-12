@@ -37,8 +37,6 @@ code, like setting up replicable scientific experiments.
 - [All special attributes at a glance](#all-special-attributes-at-a-glance)
   - [In rules](#in-rules)
   - [In the global section](#in-the-global-section)
-- [Internals](#internals)
-  - [The build algorithm](#the-build-algorithm)
 - [Getting in touch](#getting-in-touch)
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
