@@ -11,11 +11,11 @@ https://github.com/texttheater/produce/
 import argparse
 import ast
 import collections
-import concurrent.futures
 import contextlib
 import errno
 import logging
 import os
+import queue
 import re
 import shlex
 import shutil
@@ -564,6 +564,7 @@ class Production:
     def produce(self, targets):
         self.exception = None
         self.target_result = {} # maps done targets to a ProductionResult or an exception
+        self.semaphore.acquire()
         try:
             results = self.produce_targets(targets, [], [], False)
             if any(result.updated for result in results):
@@ -574,6 +575,8 @@ class Production:
             # The exception we catch is not necessarily the one that was first
             # raised - that we store in the exception field.
             raise self.exception
+        finally:
+            self.semaphore.release()
 
     def register_exception(self, exception):
         """Register an exception that was raised in one of the worker threads.
@@ -632,22 +635,42 @@ class Production:
         if not targets:
             return []
         exception = None
-        with concurrent.futures.ThreadPoolExecutor(self.jobs) as executor:
-            # TODO can we use a single global executor? Then we would be more
-            # sure of never hitting the thread limit. Also we would not need
-            # the build_sema anymore.
-            futures = [executor.submit(self.produce_target, target, beam,
-                                       neutral_targets, pretend_up_to_date)
-                       for target in targets]
-            for future in concurrent.futures.as_completed(futures):
-                e = future.exception()
+        q = queue.Queue()
+
+        def schedule():
+            for i, target in enumerate(targets):
+                if self.is_shutting_down():
+                    break
+                def work(i=i, target=target):
+                    self.semaphore.acquire()
+                    try:
+                        result = self.produce_target(target, beam,
+                            neutral_targets, pretend_up_to_date)
+                    except BaseException as e:
+                        q.put((i, None, e))
+                    else:
+                        q.put((i, result, None))
+                    finally:
+                        self.semaphore.release()
+                worker = threading.Thread(target=work)
+                worker.start()
+
+        self.semaphore.release()
+        schedule() # TODO do this in a thread
+
+        results = [None] * len(targets)
+        e = None
+        for _ in range(len(targets)):
+            i, result, exception = q.get()
+            if exception is not None:
                 if e is not None:
-                    exception = e
-                    self.register_exception(e)
-        if exception is None:
-            return [future.result() for future in futures]
-        else:
-            raise exception
+                    e = exception
+                self.register_exception(exception)
+            results[i] = result
+        self.semaphore.acquire()
+        if e is not None:
+            raise e
+        return results
                     
     def produce_target(self, target, beam, neutral_targets,
                        pretend_up_to_date):
@@ -767,9 +790,10 @@ class Production:
             return ProductionResult(False, mtime(target))
 
         # Step 6: run recipe with semaphore bounding parallel recipes
-        with self.semaphore:
-            self.run_recipe(target, irule, outputs, len(beam) - 1)
-            return ProductionResult(True, mtime(target))
+        self.run_recipe(target, irule, outputs, len(beam) - 1)
+
+        # Step 7: return result
+        return ProductionResult(True, mtime(target))
 
     def run_recipe(self, target, irule, outputs, depth):
         # Step 1: abort if shutting down
