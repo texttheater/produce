@@ -14,7 +14,7 @@ class MultipleOutputsTest(prodtest.ProduceTestCase):
         """
         self.assertDirectoryContents(['produce.ini', 'Makefile'])
         with self.assertLogs(logger='produce', level='INFO') as l:
-            self.produce('a.txt', 'b.txt')
+            self.produce('a.txt', 'b.txt', **{'-j': '3'})
         self.assertEqual(len(l.output), 4)
         self.assertDirectoryContents(['produce.ini', 'Makefile', 'a.txt', 'b.txt'])
 
@@ -24,7 +24,7 @@ class MultipleOutputsTest(prodtest.ProduceTestCase):
         """
         self.assertDirectoryContents(['produce.ini', 'Makefile'])
         with self.assertLogs(logger='produce', level='INFO') as l:
-            self.produce('c.txt', 'd.txt')
+            self.produce('c.txt', 'd.txt', **{'-j': '3'})
         self.assertEqual(len(l.output), 2)
         self.assertDirectoryContents(['produce.ini', 'Makefile', 'c.txt', 'd.txt'])
 
@@ -34,7 +34,7 @@ class MultipleOutputsTest(prodtest.ProduceTestCase):
         """
         self.assertDirectoryContents(['produce.ini', 'Makefile'])
         with self.assertLogs(logger='produce', level='INFO') as l:
-            self.produce('e.txt', 'f.txt')
+            self.produce('e.txt', 'f.txt', **{'-j': '3'})
         self.assertEqual(len(l.output), 2)
         self.assertDirectoryContents(['produce.ini', 'Makefile', 'e.txt', 'f.txt'])
 
@@ -44,6 +44,6 @@ class MultipleOutputsTest(prodtest.ProduceTestCase):
         """
         self.assertDirectoryContents(['produce.ini', 'Makefile'])
         with self.assertLogs(logger='produce', level='INFO') as l:
-            self.produce('g.txt', 'h.txt', 'i.txt')
+            self.produce('g.txt', 'h.txt', 'i.txt', **{'-j': '3'})
         self.assertEqual(len(l.output), 2)
         self.assertDirectoryContents(['produce.ini', 'Makefile', 'g.txt', 'h.txt', 'i.txt'])

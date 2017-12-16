@@ -35,8 +35,8 @@ import time
 # but with a temp file with target, then percolates dirtiness only if the new
 # file differs from the existing version - e.g. for files that depend on data
 # from a database.
-# TODO optionally delete intermediate files
 # TODO rename private members
+# FIXME creates a thread for each target, fails with many targets
 
 
 ### UTILITIES #################################################################
@@ -414,8 +414,10 @@ def produce_pattern_to_regex(pattern, globes={}):
         if ip.startswith('%%'):
             regex += '%'
             ip = ip[:2]
-        # FIXME using the same variable twice in the pattern can be useful but
-        # the re library will raise an exception
+        # FIXME When the same variable is used a second time in a pattern, we
+        # should use a *backreference* to a named group instead of a named
+        # group. Matching identical parts is useful, a second group with the
+        # same name raises an exception.
         elif ip.startswith('%{') and '}' in ip:
             # TODO check that the part between curly braces is a valid
             # Python identifier (or, eventually, expression)
@@ -553,6 +555,7 @@ class Production:
         self.dry_run = dry_run
         self.always_build = always_build
         self.always_build_these = always_build_these
+        self.jobs = jobs
         self.semaphore = threading.BoundedSemaphore(jobs)
         self.pretend_up_to_date = pretend_up_to_date
         self.lock = threading.Lock()
@@ -629,8 +632,10 @@ class Production:
         if not targets:
             return []
         exception = None
-        with concurrent.futures.ThreadPoolExecutor(len(targets)) as executor:
-            # TODO can we use a single global executor for efficiency?
+        with concurrent.futures.ThreadPoolExecutor(self.jobs) as executor:
+            # TODO can we use a single global executor? Then we would be more
+            # sure of never hitting the thread limit. Also we would not need
+            # the build_sema anymore.
             futures = [executor.submit(self.produce_target, target, beam,
                                        neutral_targets, pretend_up_to_date)
                        for target in targets]
