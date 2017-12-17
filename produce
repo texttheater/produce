@@ -639,7 +639,6 @@ class Production:
         def schedule():
             for i, target in enumerate(targets):
                 def work(i=i, target=target):
-                    self.semaphore.acquire()
                     try:
                         result = self.produce_target(target, beam,
                             neutral_targets, pretend_up_to_date)
@@ -647,38 +646,41 @@ class Production:
                         q.put((i, None, e))
                     else:
                         q.put((i, result, None))
-                    finally:
-                        self.semaphore.release()
                 worker = threading.Thread(target=work)
                 q.put('next')
+                self.semaphore.acquire()
                 worker.start()
                 if self.is_shutting_down():
                     break
             q.put('end')
 
         scheduler = threading.Thread(target=schedule)
-        self.semaphore.release()
         scheduler.start()
-
-        results = [None] * len(targets)
-        e = None
-        ended = False
-        worker_count = 0
-        while (not ended) or (worker_count > 0):
-            message = q.get()
-            if message == 'next':
-                worker_count += 1
-            elif message == 'end':
-                ended = True
-            else:
-                worker_count -= 1
-                i, result, exception = message
-                if exception is not None:
-                    if e is None:
-                        e = exception
-                        self.register_exception(exception)
+        self.semaphore.release()
+        try:
+            results = [None] * len(targets)
+            e = None
+            ended = False
+            worker_count = 0
+            while (not ended) or (worker_count > 0):
+                message = q.get()
+                if message == 'next':
+                    worker_count += 1
+                elif message == 'end':
+                    ended = True
                 else:
-                    results[i] = result
+                    self.semaphore.release()
+                    worker_count -= 1
+                    i, result, exception = message
+                    if exception is not None:
+                        if e is None:
+                            e = exception
+                            self.register_exception(exception)
+                    else:
+                        results[i] = result
+        except BaseException as e:
+            print('bx' + str(e))
+            raise e
         self.semaphore.acquire()
         if e is not None:
             raise e
