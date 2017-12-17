@@ -634,13 +634,10 @@ class Production:
         """
         if not targets:
             return []
-        exception = None
         q = queue.Queue()
 
         def schedule():
             for i, target in enumerate(targets):
-                if self.is_shutting_down():
-                    break
                 def work(i=i, target=target):
                     self.semaphore.acquire()
                     try:
@@ -653,20 +650,35 @@ class Production:
                     finally:
                         self.semaphore.release()
                 worker = threading.Thread(target=work)
+                q.put('next')
                 worker.start()
+                if self.is_shutting_down():
+                    break
+            q.put('end')
 
+        scheduler = threading.Thread(target=schedule)
         self.semaphore.release()
-        schedule() # TODO do this in a thread
+        scheduler.start()
 
         results = [None] * len(targets)
         e = None
-        for _ in range(len(targets)):
-            i, result, exception = q.get()
-            if exception is not None:
-                if e is not None:
-                    e = exception
-                self.register_exception(exception)
-            results[i] = result
+        ended = False
+        worker_count = 0
+        while (not ended) or (worker_count > 0):
+            message = q.get()
+            if message == 'next':
+                worker_count += 1
+            elif message == 'end':
+                ended = True
+            else:
+                worker_count -= 1
+                i, result, exception = message
+                if exception is not None:
+                    if e is None:
+                        e = exception
+                        self.register_exception(exception)
+                else:
+                    results[i] = result
         self.semaphore.acquire()
         if e is not None:
             raise e
