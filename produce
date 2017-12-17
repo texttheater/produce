@@ -36,7 +36,6 @@ import time
 # file differs from the existing version - e.g. for files that depend on data
 # from a database.
 # TODO rename private members
-# FIXME creates a thread for each target, fails with many targets
 
 
 ### UTILITIES #################################################################
