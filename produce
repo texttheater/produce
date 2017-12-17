@@ -635,9 +635,10 @@ class Production:
         if not targets:
             return []
         q = queue.Queue()
-
         def schedule():
             for i, target in enumerate(targets):
+                if self.is_shutting_down():
+                    break
                 def work(i=i, target=target):
                     try:
                         result = self.produce_target(target, beam,
@@ -650,38 +651,31 @@ class Production:
                 q.put('next')
                 self.semaphore.acquire()
                 worker.start()
-                if self.is_shutting_down():
-                    break
             q.put('end')
-
         scheduler = threading.Thread(target=schedule)
         scheduler.start()
-        self.semaphore.release()
-        try:
-            results = [None] * len(targets)
-            e = None
-            ended = False
-            worker_count = 0
-            while (not ended) or (worker_count > 0):
-                message = q.get()
-                if message == 'next':
-                    worker_count += 1
-                elif message == 'end':
-                    ended = True
+        self.semaphore.release() # suspend holding semaphore while waiting for children
+        results = [None] * len(targets)
+        e = None
+        ended = False
+        worker_count = 0
+        while (not ended) or (worker_count > 0):
+            message = q.get()
+            if message == 'next':
+                worker_count += 1
+            elif message == 'end':
+                ended = True
+            else:
+                self.semaphore.release()
+                worker_count -= 1
+                i, result, exception = message
+                if exception is not None:
+                    if e is None:
+                        e = exception
+                        self.register_exception(exception)
                 else:
-                    self.semaphore.release()
-                    worker_count -= 1
-                    i, result, exception = message
-                    if exception is not None:
-                        if e is None:
-                            e = exception
-                            self.register_exception(exception)
-                    else:
-                        results[i] = result
-        except BaseException as e:
-            print('bx' + str(e))
-            raise e
-        self.semaphore.acquire()
+                    results[i] = result
+        self.semaphore.acquire() # children are done, resume holding semaphore
         if e is not None:
             raise e
         return results
