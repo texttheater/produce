@@ -325,7 +325,7 @@ def interpret_sections(sections):
 
 
 def interpolate(string, varz, ignore_undefined=False, keep_escaped=False):
-    debug(3, 'interpolate called with varz: %s', {k: v for (k, v) in
+    debug(4, 'interpolate called with varz: %s', {k: v for (k, v) in
           varz.items() if k != '__builtins__'})
     original_string = string
     result = ''
@@ -344,14 +344,14 @@ def interpolate(string, varz, ignore_undefined=False, keep_escaped=False):
             start = 2
             error = None
             while '}' in string[start:]:
-                debug(3, 'looking for } in %s, starting at %s', string, start)
+                debug(4, 'looking for } in %s, starting at %s', string, start)
                 index = string.index('}', start)
                 # Add parentheses so users don't need to add them for sequence
                 # expressions:
                 expression = '(' + string[2:index] + ')'
                 try:
                     value = eval(expression, varz)
-                    debug(3, 'interpolating %s into %s', expression, value)
+                    debug(4, 'interpolating %s into %s', expression, value)
                     result += value_to_string(value)
                     string = string[index + 1:]
                     break
@@ -428,7 +428,7 @@ def produce_pattern_to_regex(pattern, globes={}):
             regex += re.escape(ip[:1])
             ip = ip[1:]
     regex += '$'  # re.match doesn't enforce reaching the end by itself
-    debug(3, 'generated regex: %s', regex)
+    debug(4, 'generated regex: %s', regex)
     return re.compile(regex)
 
 
@@ -477,7 +477,7 @@ def create_irule(target, rules, globes):
                 debug(3, 'condition %s failed, trying next rule',
                       result['cond'])
                 continue
-            debug(3, 'instantiated rule for target %s has varz: %s', target,
+            debug(4, 'instantiated rule for target %s has varz: %s', target,
                   {k: v for (k, v) in varz.items() if k != '__builtins__'})
             result['type'] = result.get('type', 'file')
             debug(3, 'target type: %s', result['type'])
