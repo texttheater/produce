@@ -621,7 +621,7 @@ class Production:
 
     def produce_targets(self, targets, beam, neutral_targets,
                         pretend_up_to_date):
-        """produce_targets takes a list of targets and produces them.
+        """Takes a list of targets and produces them.
 
         Returns a list of ProductionResult objects.
         
@@ -691,14 +691,13 @@ class Production:
                     
     def produce_target(self, target, beam, neutral_targets,
                        pretend_up_to_date):
-        """produce_target handles the core production logic for a single
-        top-level target.
+        """Handles the core production logic for a single target.
 
         Returns a ProductionResult object.
 
         Threading logic is kept outside this method as far as possible. It's
         just an ordinary method that takes an argument and returns a result or
-        raises and exception. It still has to synchronize access to fields
+        raises an exception. It still has to synchronize access to fields
         because it runs inside worker threads.
         """
 
@@ -737,6 +736,9 @@ class Production:
         lockables = sorted(lockables) # to prevent deadlocks
 
         # Step 6: lock that
+        # We lock all outputs at this early stage (before we produce
+        # dependencies) so we are sure never to even try to produce one
+        # target from two different worker threads.
         try:
             # Release semaphore until after we have all the target locks we
             # need, to prevent deadlocks.
