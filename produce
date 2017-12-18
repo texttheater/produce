@@ -11,7 +11,6 @@ https://github.com/texttheater/produce/
 import argparse
 import ast
 import collections
-import contextlib
 import errno
 import logging
 import os
@@ -729,22 +728,24 @@ class Production:
                     'cyclic dependency: {}; {} has {} as output'.format(
                         ' <- '.join([target] + beam), target, output))
 
-        # Step 5: lock all outputs
+        # Step 5: determine what we have to lock
         lockables = set(outputs)
         if 'recipe' in irule:
             lockables.add(target)
         else:
             lockables.discard(target) # in case it's in outputs
         lockables = sorted(lockables) # to prevent deadlocks
-        with contextlib.ExitStack() as stack:
-            # Acquire locks. Release is automatic on leaving the context of the
-            # stack.
-            for lockable in lockables:
-                debug(3, '%s locking %s', threading.current_thread().name, lockable)
-                stack.enter_context(self.get_target_lock(lockable))
-                debug(3, '%s locked %s', threading.current_thread().name, lockable)
 
-            # Step 6: abort if target already done
+        # Step 6: lock that
+        try:
+            # Release semaphore until after we have all the target locks we
+            # need, to prevent deadlocks.
+            self.semaphore.release()
+            for lockable in lockables:
+                self.get_target_lock(lockable).acquire()
+            self.semaphore.acquire()
+
+            # Step 7: abort if target already done
             result = self.get_result(target)
             debug(3, 'retrieved result for {}: {}'.format(target, result))
             if result is None:
@@ -754,7 +755,7 @@ class Production:
             else:
                 raise result
 
-            # Step 7: do target and mark as done
+            # Step 8: do target and mark as done
             try:
                 result = self.do_target(target, irule, outputs, beam,
                                         neutral_targets, pretend_up_to_date)
@@ -764,6 +765,17 @@ class Production:
             except BaseException as e:
                 self.set_result(target, e)
                 raise e
+        finally:
+            for lockable in lockables:
+                self.get_target_lock(lockable).release()
+
+        with contextlib.ExitStack() as stack:
+            # Acquire locks. Release is automatic on leaving the context of the
+            # stack.
+            for lockable in lockables:
+                debug(3, '%s locking %s', threading.current_thread().name, lockable)
+                stack.enter_context(self.get_target_lock(lockable))
+                debug(3, '%s locked %s', threading.current_thread().name, lockable)
             
     def do_target(self, target, irule, outputs, beam, neutral_targets,
             pretend_up_to_date):
