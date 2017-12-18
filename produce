@@ -768,14 +768,6 @@ class Production:
         finally:
             for lockable in lockables:
                 self.get_target_lock(lockable).release()
-
-        with contextlib.ExitStack() as stack:
-            # Acquire locks. Release is automatic on leaving the context of the
-            # stack.
-            for lockable in lockables:
-                debug(3, '%s locking %s', threading.current_thread().name, lockable)
-                stack.enter_context(self.get_target_lock(lockable))
-                debug(3, '%s locked %s', threading.current_thread().name, lockable)
             
     def do_target(self, target, irule, outputs, beam, neutral_targets,
             pretend_up_to_date):
