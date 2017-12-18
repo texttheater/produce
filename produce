@@ -554,7 +554,6 @@ class Production:
         self.dry_run = dry_run
         self.always_build = always_build
         self.always_build_these = always_build_these
-        self.jobs = jobs
         self.semaphore = threading.BoundedSemaphore(jobs)
         self.pretend_up_to_date = pretend_up_to_date
         self.lock = threading.Lock()
@@ -563,7 +562,9 @@ class Production:
     def produce(self, targets):
         self.exception = None
         self.target_result = {} # maps done targets to a ProductionResult or an exception
+        print('acquiring semaphore at top')
         self.semaphore.acquire()
+        print('acquired semaphore at top')
         try:
             results = self.produce_targets(targets, [], [], False)
             if any(result.updated for result in results):
@@ -575,7 +576,9 @@ class Production:
             # raised - that we store in the exception field.
             raise self.exception
         finally:
+            print('%s releasing semaphore at top' % threading.current_thread().name)
             self.semaphore.release()
+            print('%s released semaphore at top' % threading.current_thread().name)
 
     def register_exception(self, exception):
         """Register an exception that was raised in one of the worker threads.
@@ -648,12 +651,16 @@ class Production:
                         q.put((i, result, None))
                 worker = threading.Thread(target=work)
                 q.put('next')
+                print('%s acquiring semaphore for %s (beam: %s)' % (threading.current_thread().name, target, beam))
                 self.semaphore.acquire()
+                print('%s acquired semaphore for %s (beam: %s)' % (threading.current_thread().name, target, beam))
                 worker.start()
             q.put('end')
         scheduler = threading.Thread(target=schedule)
         scheduler.start()
+        print('%s releasing semaphore while producing targets (beam: %s)' % (threading.current_thread().name, beam))
         self.semaphore.release() # suspend holding semaphore while waiting for children
+        print('%s released semaphore while producing targets (beam: %s)' % (threading.current_thread().name, beam))
         results = [None] * len(targets)
         e = None
         ended = False
@@ -665,16 +672,20 @@ class Production:
             elif message == 'end':
                 ended = True
             else:
-                self.semaphore.release()
-                worker_count -= 1
                 i, result, exception = message
+                print('%s releasing semaphore for %s (beam: %s)' % (threading.current_thread().name, targets[i], beam))
+                self.semaphore.release()
+                print('%s released semaphore for %s (beam: %s)' % (threading.current_thread().name, targets[i], beam))
+                worker_count -= 1
                 if exception is not None:
                     if e is None:
                         e = exception
                         self.register_exception(exception)
                 else:
                     results[i] = result
+        print('%s reacquiring semaphore after producing targets (beam: %s)' % (threading.current_thread().name, beam))
         self.semaphore.acquire() # children are done, resume holding semaphore
+        print('%s reacquired semaphore after producing targets (beam: %s)' % (threading.current_thread().name, beam))
         if e is not None:
             raise e
         return results
@@ -719,6 +730,8 @@ class Production:
                         ' <- '.join([target] + beam), target, output))
 
         # Step 4: lock all outputs
+        # TODO Do we have to do it this early? Shouldn't it suffice to hold the
+        # locks while running the recipes?
         lockables = set(outputs)
         if 'recipe' in irule:
             lockables.add(target)
@@ -729,9 +742,9 @@ class Production:
             # Acquire locks. Release is automatic on leaving the context of the
             # stack.
             for lockable in lockables:
-                debug(3, 'locking %s', lockable)
-                stack.enter_context(self.get_target_lock(lockable))
-                debug(3, 'locked %s', lockable)
+                print('%s locking %s' % (threading.current_thread().name, lockable))
+                stack.enter_context(self.get_target_lock(lockable)) # FIXME 
+                print('%s locked %s' % (threading.current_thread().name, lockable))
 
             # Step 5: abort if target already done
             result = self.get_result(target)
@@ -796,7 +809,7 @@ class Production:
         if (not out_of_date) or pretend_up_to_date:
             return ProductionResult(False, mtime(target))
 
-        # Step 6: run recipe with semaphore bounding parallel recipes
+        # Step 6: run recipe
         self.run_recipe(target, irule, outputs, len(beam) - 1)
 
         # Step 7: return result
