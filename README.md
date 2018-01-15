@@ -912,3 +912,8 @@ Getting in touch
 Produce is being developed by Kilian Evang <%{firstname}@%{lastname}.name>.
 I would love to hear from you if you find it useful, if you have questions, bug
 reports or feature requests.
+
+Acknowledgments
+---------------
+
+The Produce logo was designed by [Valerio Basile](https://valeriobasile.github.io).
