@@ -845,7 +845,7 @@ class Production:
 
         # Step 5: optionally print recipe
         if debug_level >= 1:
-            debug(3, recipe)
+            print(recipe)
 
         # Step 6: abort if dry run
         if self.is_dry_run():
