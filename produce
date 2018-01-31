@@ -561,9 +561,9 @@ class Production:
     def produce(self, targets):
         self.exception = None
         self.target_result = {} # maps done targets to a ProductionResult or an exception
-        debug(3, 'acquiring semaphore at top')
+        debug(4, 'acquiring semaphore at top')
         self.semaphore.acquire()
-        debug(3, 'acquired semaphore at top')
+        debug(4, 'acquired semaphore at top')
         try:
             results = self.produce_targets(targets, [], [], False)
             if any(result.updated for result in results):
@@ -575,9 +575,9 @@ class Production:
             # raised - that we store in the exception field.
             raise self.exception
         finally:
-            debug(3, '%s releasing semaphore at top', threading.current_thread().name)
+            debug(4, '%s releasing semaphore at top', threading.current_thread().name)
             self.semaphore.release()
-            debug(3, '%s released semaphore at top', threading.current_thread().name)
+            debug(4, '%s released semaphore at top', threading.current_thread().name)
 
     def register_exception(self, exception):
         """Register an exception that was raised in one of the worker threads.
@@ -650,16 +650,16 @@ class Production:
                         q.put((i, result, None))
                 worker = threading.Thread(target=work)
                 q.put('next')
-                debug(3, '%s acquiring semaphore for %s (beam: %s)', threading.current_thread().name, target, beam)
+                debug(4, '%s acquiring semaphore for %s (beam: %s)', threading.current_thread().name, target, beam)
                 self.semaphore.acquire()
-                debug(3, '%s acquired semaphore for %s (beam: %s)', threading.current_thread().name, target, beam)
+                debug(4, '%s acquired semaphore for %s (beam: %s)', threading.current_thread().name, target, beam)
                 worker.start()
             q.put('end')
         scheduler = threading.Thread(target=schedule)
         scheduler.start()
-        debug(3, '%s releasing semaphore while producing targets (beam: %s)', threading.current_thread().name, beam)
+        debug(4, '%s releasing semaphore while producing targets (beam: %s)', threading.current_thread().name, beam)
         self.semaphore.release() # suspend holding semaphore while waiting for children
-        debug(3, '%s released semaphore while producing targets (beam: %s)', threading.current_thread().name, beam)
+        debug(4, '%s released semaphore while producing targets (beam: %s)', threading.current_thread().name, beam)
         results = [None] * len(targets)
         e = None
         ended = False
@@ -672,9 +672,9 @@ class Production:
                 ended = True
             else:
                 i, result, exception = message
-                debug(3, '%s releasing semaphore for %s (beam: %s)', threading.current_thread().name, targets[i], beam)
+                debug(4, '%s releasing semaphore for %s (beam: %s)', threading.current_thread().name, targets[i], beam)
                 self.semaphore.release()
-                debug(3, '%s released semaphore for %s (beam: %s)', threading.current_thread().name, targets[i], beam)
+                debug(4, '%s released semaphore for %s (beam: %s)', threading.current_thread().name, targets[i], beam)
                 worker_count -= 1
                 if exception is not None:
                     if e is None:
@@ -682,9 +682,9 @@ class Production:
                         self.register_exception(exception)
                 else:
                     results[i] = result
-        debug(3, '%s reacquiring semaphore after producing targets (beam: %s)', threading.current_thread().name, beam)
+        debug(4, '%s reacquiring semaphore after producing targets (beam: %s)', threading.current_thread().name, beam)
         self.semaphore.acquire() # children are done, resume holding semaphore
-        debug(3, '%s reacquired semaphore after producing targets (beam: %s)', threading.current_thread().name, beam)
+        debug(4, '%s reacquired semaphore after producing targets (beam: %s)', threading.current_thread().name, beam)
         if e is not None:
             raise e
         return results
