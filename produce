@@ -9,20 +9,18 @@ https://github.com/texttheater/produce/
 
 
 import argparse
+import asyncio
 import ast
 import collections
 import errno
 import logging
 import os
-import queue
 import re
 import shlex
 import shutil
 import signal
-import subprocess
 import sys
 import tempfile
-import threading
 import time
 
 
@@ -553,59 +551,47 @@ class Production:
         self.dry_run = dry_run
         self.always_build = always_build
         self.always_build_these = always_build_these
-        self.semaphore = threading.BoundedSemaphore(jobs)
+        self.build_sema = asyncio.BoundedSemaphore(jobs)
         self.pretend_up_to_date = pretend_up_to_date
-        self.lock = threading.Lock()
-        self.target_locks = collections.defaultdict(threading.Lock)
+        self.target_locks = collections.defaultdict(asyncio.Lock)
 
-    def produce(self, targets):
+    async def produce(self, targets):
         self.exception = None
         self.target_result = {} # maps done targets to a ProductionResult or an exception
-        debug(4, 'acquiring semaphore at top')
-        self.semaphore.acquire()
-        debug(4, 'acquired semaphore at top')
         try:
-            results = self.produce_targets(targets, [], [], False)
+            results = await self.produce_targets(targets, [], [], False)
             if any(result.updated for result in results):
                 pass
             else:
                 logging.info('all targets are up to date')
-        except BaseException:
+        except BaseException as e:
             # The exception we catch is not necessarily the one that was first
             # raised - that we store in the exception field.
-            raise self.exception
-        finally:
-            debug(4, '%s releasing semaphore at top', threading.current_thread().name)
-            self.semaphore.release()
-            debug(4, '%s released semaphore at top', threading.current_thread().name)
+            raise e
+            #raise self.exception
 
     def register_exception(self, exception):
         """Register an exception that was raised in one of the worker threads.
 
-        This method is thread-safe. The first registered exception will be
-        stored to be re-raised by the produce method in the end. Storing an
-        exception will trigger shutdown, i.e., the worker threads notice it and
-        abort as soon as they can. Any further registered exceptions are
-        ignored.
+        The first registered exception will be stored to be re-raised by the
+        produce method in the end. Storing an exception will trigger shutdown,
+        i.e., the worker threads notice it and abort as soon as they can. Any
+        further registered exceptions are ignored.
         """
-        with self.lock:
-            if self.exception is None:
-                self.exception = exception
+        if self.exception is None:
+            self.exception = exception
 
     def create_irule(self, target):
         return create_irule(target, self.rules, self.globes)
 
     def get_target_lock(self, target):
-        with self.lock:
-            return self.target_locks[target]
+        return self.target_locks[target]
 
     def get_result(self, target):
-        with self.lock:
-            return self.target_result.get(target, None)
+        return self.target_result.get(target, None)
 
     def set_result(self, target, result):
-        with self.lock:
-            self.target_result[target] = result
+        self.target_result[target] = result
 
     def pretend_up_to_date_for(self, target):
         return target in self.pretend_up_to_date
@@ -619,87 +605,38 @@ class Production:
     def is_dry_run(self):
         return self.dry_run
 
-    def produce_targets(self, targets, beam, neutral_targets,
-                        pretend_up_to_date):
+    async def produce_targets(self, targets, beam, neutral_targets,
+                              pretend_up_to_date):
         """Takes a list of targets and produces them.
 
         Returns a list of ProductionResult objects.
-        
-        The core logic is delegated to produce_target for each target, each in
-        a separate worker thread. produce_targets is mainly responsible for
-        managing the workers and for handling exceptions.
-
-        produce_targets is recursively called from produce_target in worker
-        threads for producing dependencies, so it must synchronize access to
-        fields.
         """
-        if not targets:
+        if not targets: # TODO Do we need to handle this special case?
             return []
-        q = queue.Queue()
-        def schedule():
-            for i, target in enumerate(targets):
-                if self.is_shutting_down():
-                    break
-                def work(i=i, target=target):
-                    try:
-                        result = self.produce_target(target, beam,
-                            neutral_targets, pretend_up_to_date)
-                    except BaseException as e:
-                        q.put((i, None, e))
-                    else:
-                        q.put((i, result, None))
-                worker = threading.Thread(target=work)
-                q.put('next')
-                debug(4, '%s acquiring semaphore for %s (beam: %s)', threading.current_thread().name, target, beam)
-                self.semaphore.acquire()
-                debug(4, '%s acquired semaphore for %s (beam: %s)', threading.current_thread().name, target, beam)
-                worker.start()
-            q.put('end')
-        scheduler = threading.Thread(target=schedule)
-        scheduler.start()
-        debug(4, '%s releasing semaphore while producing targets (beam: %s)', threading.current_thread().name, beam)
-        self.semaphore.release() # suspend holding semaphore while waiting for children
-        debug(4, '%s released semaphore while producing targets (beam: %s)', threading.current_thread().name, beam)
-        results = [None] * len(targets)
-        e = None
-        ended = False
-        worker_count = 0
-        while (not ended) or (worker_count > 0):
-            message = q.get()
-            if message == 'next':
-                worker_count += 1
-            elif message == 'end':
-                ended = True
-            else:
-                i, result, exception = message
-                debug(4, '%s releasing semaphore for %s (beam: %s)', threading.current_thread().name, targets[i], beam)
-                self.semaphore.release()
-                debug(4, '%s released semaphore for %s (beam: %s)', threading.current_thread().name, targets[i], beam)
-                worker_count -= 1
+        futures = [asyncio.ensure_future(self.produce_target(target, beam, neutral_targets, pretend_up_to_date))
+                   for target in targets]
+        first_exception = None
+        pending = futures
+        while pending:
+            print('before')
+            done, pending = await asyncio.wait(pending, return_when=concurrent.futures.FIRST_COMPLETED)
+            print('after')
+            for d in done:
+                exception = d.exception()
                 if exception is not None:
-                    if e is None:
-                        e = exception
-                        self.register_exception(exception)
-                else:
-                    results[i] = result
-        debug(4, '%s reacquiring semaphore after producing targets (beam: %s)', threading.current_thread().name, beam)
-        self.semaphore.acquire() # children are done, resume holding semaphore
-        debug(4, '%s reacquired semaphore after producing targets (beam: %s)', threading.current_thread().name, beam)
-        if e is not None:
-            raise e
-        return results
+                    if first_exception is not None:
+                        first_exception = exception
+                        self.register_exception(exception) # causes other coroutines to abort
+        if first_exception is not None:
+            raise first_exception
+        else:
+            return [f.result() for f in futures]
                     
-    def produce_target(self, target, beam, neutral_targets,
-                       pretend_up_to_date):
+    async def produce_target(self, target, beam, neutral_targets,
+                             pretend_up_to_date):
         """Handles the core production logic for a single target.
 
-        Returns a ProductionResult object.
-
-        Threading logic is kept outside this method as far as possible. It's
-        just an ordinary method that takes an argument and returns a result or
-        raises an exception. It still has to synchronize access to fields
-        because it runs inside worker threads.
-        """
+        Returns a ProductionResult object."""
 
         # Step 1: catch cycles
         if target in beam:
@@ -740,12 +677,8 @@ class Production:
         # dependencies) so we are sure never to even try to produce one
         # target from two different worker threads.
         try:
-            # Release semaphore until after we have all the target locks we
-            # need, to prevent deadlocks.
-            self.semaphore.release()
             for lockable in lockables:
-                self.get_target_lock(lockable).acquire()
-            self.semaphore.acquire()
+                await self.get_target_lock(lockable).acquire()
 
             # Step 7: abort if target already done
             result = self.get_result(target)
@@ -759,10 +692,12 @@ class Production:
 
             # Step 8: do target and mark as done
             try:
-                result = self.do_target(target, irule, outputs, beam,
-                                        neutral_targets, pretend_up_to_date)
+                result = await self.do_target(target, irule, outputs, beam,
+                                              neutral_targets,
+                                              pretend_up_to_date)
                 self.set_result(target, result)
-                debug(3, 'created result for {}: {}'.format(target, repr(result)))
+                debug(3, 'created result for {}: {}'.format(
+                    target, repr(result)))
                 return result
             except BaseException as e:
                 self.set_result(target, e)
@@ -771,8 +706,8 @@ class Production:
             for lockable in lockables:
                 self.get_target_lock(lockable).release()
             
-    def do_target(self, target, irule, outputs, beam, neutral_targets,
-            pretend_up_to_date):
+    async def do_target(self, target, irule, outputs, beam, neutral_targets,
+                        pretend_up_to_date):
         # Step 0: update beam, neutral_targets, pretend_up_to_date
         beam = [target] + beam
         if 'recipe' not in irule:
@@ -782,8 +717,8 @@ class Production:
 
         # Step 1: make depfile up to date, if any
         if 'depfile' in irule:
-            self.produce_targets([irule['depfile']], beam, neutral_targets,
-                                 pretend_up_to_date)
+            await self.produce_targets([irule['depfile']], beam, neutral_targets,
+                                       pretend_up_to_date)
 
         # Step 2: determine direct dependencies
         ddeps = list_ddeps(irule)
@@ -791,8 +726,8 @@ class Production:
         debug(2, '%s depends on %s', target, ', '.join(ddeps))
 
         # Step 3: make dependencies up to date
-        results = self.produce_targets(ddeps, beam,
-            neutral_targets, pretend_up_to_date)
+        results = await self.produce_targets(ddeps, beam, neutral_targets,
+                                             pretend_up_to_date)
 
         # Step 5: determine if target is out of date
         out_of_date = False
@@ -816,12 +751,12 @@ class Production:
             return ProductionResult(False, mtime(target))
 
         # Step 7: run recipe
-        self.run_recipe(target, irule, outputs, len(beam) - 1)
+        await self.run_recipe(target, irule, outputs, len(beam) - 1)
 
         # Step 8: return result
         return ProductionResult(True, mtime(target))
 
-    def run_recipe(self, target, irule, outputs, depth):
+    async def run_recipe(self, target, irule, outputs, depth):
         # Step 1: abort if shutting down
         if self.is_shutting_down():
             raise ProduceError('aborting due to shutdown')
@@ -862,26 +797,28 @@ class Production:
             remove_if_exists(backup_name)
 
         # Step 8: create recipe file
-        with tempfile.NamedTemporaryFile(mode='w') as recipefile:
+        with await self.build_sema, \
+            tempfile.NamedTemporaryFile(mode='w') as recipefile:
             recipefile.write(recipe)
             recipefile.flush()
 
             # Step 9: run the recipe; try-finally for cleanup
             success = False
             try:
-                proc = subprocess.Popen([executable, recipefile.name])
+                proc = await asyncio.create_subprocess_exec(executable, recipefile.name)
                 debug(3, 'started subprocess')
                 while True:
                     try:
                         debug(3, 'waiting')
-                        proc.wait(0.05)
-                    except subprocess.TimeoutExpired:
+                        await asyncio.wait_for(asyncio.shield(proc.wait()), 0.05)
+                    except asyncio.TimeoutError:
                         pass
                     if proc.returncode is not None:
                         break
                     if self.is_shutting_down():
                         proc.kill() # FIXME doesn't always kill all child processes
-                if proc.returncode == 0:
+                returncode = await proc.wait()
+                if returncode == 0:
                     success = True
                 else:
                     raise ProduceError('recipe failed: {}'.format(repr(recipe)))
@@ -907,7 +844,7 @@ class Production:
 # kwargs
 
 
-def produce(args=[]):
+def produce(loop, args=[]):
     args = process_commandline(args)
     set_up_logging(args.debug)
     try:
@@ -937,17 +874,16 @@ def produce(args=[]):
         always_build_these = set()
     # Execute prelude, with globes providing the name context:
     exec(globes.get('prelude', ''), globes)
-    # Produce:
     production = Production(rules, globes, args.dry_run, args.always_build,
                             always_build_these, args.jobs,
                             args.pretend_up_to_date)
     if _handle_signals: # HACK, see comment below
-        def handler(signum, frame):
+        def handler(signum, frame): # TODO remove frame argument?
             production.register_exception(ProduceError('killed'))
-        signal.signal(signal.SIGINT, handler)
-        signal.signal(signal.SIGHUP, handler)
-        signal.signal(signal.SIGTERM, handler)
-    production.produce(targets)
+        loop.add_signal_handler(signal.SIGINT, handler)
+        loop.add_signal_handler(signal.SIGHUP, handler)
+        loop.add_signal_handler(signal.SIGTERM, handler)
+    loop.run_until_complete(production.produce(targets))
 
 
 ### CLI #######################################################################
@@ -965,9 +901,13 @@ _handle_signals = False
 
 
 if __name__ == '__main__':
+    loop = asyncio.get_event_loop()
+    _handle_signals = True
     try:
-        _handle_signals = True
-        produce(None)
+        produce(loop, None)
+        print('produced')
     except ProduceError as e:
         logging.error(e)  # FIXME prints only first line of error message???
+    finally:
+        loop.close()
         sys.exit(1)
