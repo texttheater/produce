@@ -12,6 +12,7 @@ import argparse
 import asyncio
 import ast
 import collections
+import concurrent.futures
 import errno
 import logging
 import os
@@ -567,15 +568,14 @@ class Production:
         except BaseException as e:
             # The exception we catch is not necessarily the one that was first
             # raised - that we store in the exception field.
-            raise e
-            #raise self.exception
+            raise self.exception
 
     def register_exception(self, exception):
-        """Register an exception that was raised in one of the worker threads.
+        """Register an exception that was raised in one of the worker coroutines.
 
         The first registered exception will be stored to be re-raised by the
         produce method in the end. Storing an exception will trigger shutdown,
-        i.e., the worker threads notice it and abort as soon as they can. Any
+        i.e., the worker coroutines notice it and abort as soon as they can. Any
         further registered exceptions are ignored.
         """
         if self.exception is None:
@@ -611,20 +611,21 @@ class Production:
 
         Returns a list of ProductionResult objects.
         """
-        if not targets: # TODO Do we need to handle this special case?
+        if not targets:
             return []
-        futures = [asyncio.ensure_future(self.produce_target(target, beam, neutral_targets, pretend_up_to_date))
-                   for target in targets]
+        futures = [asyncio.ensure_future(
+            self.produce_target(target, beam, neutral_targets,
+                                pretend_up_to_date))
+            for target in targets]
         first_exception = None
         pending = futures
         while pending:
-            print('before')
-            done, pending = await asyncio.wait(pending, return_when=concurrent.futures.FIRST_COMPLETED)
-            print('after')
+            done, pending = await asyncio.wait(
+                    pending, return_when=concurrent.futures.FIRST_COMPLETED)
             for d in done:
                 exception = d.exception()
                 if exception is not None:
-                    if first_exception is not None:
+                    if first_exception is None:
                         first_exception = exception
                         self.register_exception(exception) # causes other coroutines to abort
         if first_exception is not None:
@@ -817,6 +818,7 @@ class Production:
                         break
                     if self.is_shutting_down():
                         proc.kill() # FIXME doesn't always kill all child processes
+                        break
                 returncode = await proc.wait()
                 if returncode == 0:
                     success = True
@@ -844,7 +846,7 @@ class Production:
 # kwargs
 
 
-def produce(loop, args=[]):
+def produce(args, loop):
     args = process_commandline(args)
     set_up_logging(args.debug)
     try:
@@ -878,7 +880,7 @@ def produce(loop, args=[]):
                             always_build_these, args.jobs,
                             args.pretend_up_to_date)
     if _handle_signals: # HACK, see comment below
-        def handler(signum, frame): # TODO remove frame argument?
+        def handler():
             production.register_exception(ProduceError('killed'))
         loop.add_signal_handler(signal.SIGINT, handler)
         loop.add_signal_handler(signal.SIGHUP, handler)
@@ -904,10 +906,8 @@ if __name__ == '__main__':
     loop = asyncio.get_event_loop()
     _handle_signals = True
     try:
-        produce(loop, None)
-        print('produced')
+        produce(None, loop)
     except ProduceError as e:
         logging.error(e)  # FIXME prints only first line of error message???
     finally:
         loop.close()
-        sys.exit(1)

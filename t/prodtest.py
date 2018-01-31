@@ -1,8 +1,21 @@
+import asyncio
+import atexit
 import os
 import produce
 import subprocess
 import time
 import unittest
+
+def close_event_loop():
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        return
+    loop.close()
+
+# Close event loop at exit to avoid errors/warnings.
+# Is there a nicer way??
+atexit.register(close_event_loop)
 
 def dict2opts(d):
    """
@@ -44,7 +57,8 @@ class ProduceTestCase(unittest.TestCase):
         self.assertEqual(set(filelist), set(os.listdir(directory)))
 
     def produce(self, *args, **kwargs):
-        produce.produce(dict2opts(kwargs) + list(args))
+        produce.produce(dict2opts(kwargs) + list(args),
+                        asyncio.get_event_loop())
 
     def assertFileExists(self, path):
         self.assertTrue(os.path.exists(path))
