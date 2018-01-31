@@ -797,33 +797,39 @@ class Production:
             backup_name = output + '~'
             remove_if_exists(backup_name)
 
-        # Step 8: create recipe file
-        with await self.build_sema, \
-            tempfile.NamedTemporaryFile(mode='w') as recipefile:
-            recipefile.write(recipe)
-            recipefile.flush()
+        # Step 8: acquire build semaphore
+        with await self.build_sema:
 
-            # Step 9: run the recipe; try-finally for cleanup
+            # Step 9: abort if shutting down
+            if self.is_shutting_down():
+                raise ProduceError('aborted')
+
+            # Step 10: create recipe file; try-finally for cleanup
             success = False
             try:
-                proc = await asyncio.create_subprocess_exec(executable, recipefile.name)
-                debug(3, 'started subprocess')
-                while True:
-                    try:
-                        debug(3, 'waiting')
-                        await asyncio.wait_for(asyncio.shield(proc.wait()), 0.05)
-                    except asyncio.TimeoutError:
-                        pass
-                    if proc.returncode is not None:
-                        break
-                    if self.is_shutting_down():
-                        proc.kill() # FIXME doesn't always kill all child processes
-                        break
-                returncode = await proc.wait()
-                if returncode == 0:
-                    success = True
-                else:
-                    raise ProduceError('recipe failed: {}'.format(repr(recipe)))
+                with tempfile.NamedTemporaryFile(mode='w') as recipefile:
+                    recipefile.write(recipe)
+                    recipefile.flush()
+
+                    # Step 9: run the recipe
+                    proc = await asyncio.create_subprocess_exec(executable, recipefile.name)
+                    debug(3, 'started subprocess')
+                    while True:
+                        try:
+                            debug(3, 'waiting')
+                            await asyncio.wait_for(asyncio.shield(proc.wait()), 0.05)
+                        except asyncio.TimeoutError:
+                            pass
+                        if proc.returncode is not None:
+                            break
+                        if self.is_shutting_down():
+                            proc.kill() # FIXME doesn't always kill all child processes
+                            break
+                    returncode = await proc.wait()
+                    if returncode == 0:
+                        success = True
+                    else:
+                        raise ProduceError('recipe failed: {}'.format(repr(recipe)))
             finally:
                 if success:
                     status_info('complete', target, depth)
