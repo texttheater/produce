@@ -11,10 +11,11 @@ https://github.com/texttheater/produce/
 import argparse
 import ast
 import collections
+import concurrent.futures
+import contextlib
 import errno
 import logging
 import os
-import queue
 import re
 import shlex
 import shutil
@@ -553,6 +554,7 @@ class Production:
         self.dry_run = dry_run
         self.always_build = always_build
         self.always_build_these = always_build_these
+        self.jobs = jobs
         self.semaphore = threading.BoundedSemaphore(jobs)
         self.pretend_up_to_date = pretend_up_to_date
         self.lock = threading.Lock()
@@ -561,9 +563,6 @@ class Production:
     def produce(self, targets):
         self.exception = None
         self.target_result = {} # maps done targets to a ProductionResult or an exception
-        debug(4, 'acquiring semaphore at top')
-        self.semaphore.acquire()
-        debug(4, 'acquired semaphore at top')
         try:
             results = self.produce_targets(targets, [], [], False)
             if any(result.updated for result in results):
@@ -574,10 +573,6 @@ class Production:
             # The exception we catch is not necessarily the one that was first
             # raised - that we store in the exception field.
             raise self.exception
-        finally:
-            debug(4, '%s releasing semaphore at top', threading.current_thread().name)
-            self.semaphore.release()
-            debug(4, '%s released semaphore at top', threading.current_thread().name)
 
     def register_exception(self, exception):
         """Register an exception that was raised in one of the worker threads.
@@ -635,59 +630,23 @@ class Production:
         """
         if not targets:
             return []
-        q = queue.Queue()
-        def schedule():
-            for i, target in enumerate(targets):
-                if self.is_shutting_down():
-                    break
-                def work(i=i, target=target):
-                    try:
-                        result = self.produce_target(target, beam,
-                            neutral_targets, pretend_up_to_date)
-                    except BaseException as e:
-                        q.put((i, None, e))
-                    else:
-                        q.put((i, result, None))
-                worker = threading.Thread(target=work)
-                q.put('next')
-                debug(4, '%s acquiring semaphore for %s (beam: %s)', threading.current_thread().name, target, beam)
-                self.semaphore.acquire()
-                debug(4, '%s acquired semaphore for %s (beam: %s)', threading.current_thread().name, target, beam)
-                worker.start()
-            q.put('end')
-        scheduler = threading.Thread(target=schedule)
-        scheduler.start()
-        debug(4, '%s releasing semaphore while producing targets (beam: %s)', threading.current_thread().name, beam)
-        self.semaphore.release() # suspend holding semaphore while waiting for children
-        debug(4, '%s released semaphore while producing targets (beam: %s)', threading.current_thread().name, beam)
-        results = [None] * len(targets)
-        e = None
-        ended = False
-        worker_count = 0
-        while (not ended) or (worker_count > 0):
-            message = q.get()
-            if message == 'next':
-                worker_count += 1
-            elif message == 'end':
-                ended = True
-            else:
-                i, result, exception = message
-                debug(4, '%s releasing semaphore for %s (beam: %s)', threading.current_thread().name, targets[i], beam)
-                self.semaphore.release()
-                debug(4, '%s released semaphore for %s (beam: %s)', threading.current_thread().name, targets[i], beam)
-                worker_count -= 1
-                if exception is not None:
-                    if e is None:
-                        e = exception
-                        self.register_exception(exception)
-                else:
-                    results[i] = result
-        debug(4, '%s reacquiring semaphore after producing targets (beam: %s)', threading.current_thread().name, beam)
-        self.semaphore.acquire() # children are done, resume holding semaphore
-        debug(4, '%s reacquired semaphore after producing targets (beam: %s)', threading.current_thread().name, beam)
-        if e is not None:
-            raise e
-        return results
+        exception = None
+        with concurrent.futures.ThreadPoolExecutor(self.jobs) as executor:
+            # TODO can we use a single global executor? Then we would be more
+            # sure of never hitting the thread limit. Also we would not need
+            # the build_sema anymore.
+            futures = [executor.submit(self.produce_target, target, beam,
+                                       neutral_targets, pretend_up_to_date)
+                       for target in targets]
+            for future in concurrent.futures.as_completed(futures):
+                e = future.exception()
+                if e is not None:
+                    exception = e
+                    self.register_exception(e)
+        if exception is None:
+            return [future.result() for future in futures]
+        else:
+            raise exception
                     
     def produce_target(self, target, beam, neutral_targets,
                        pretend_up_to_date):
@@ -727,27 +686,24 @@ class Production:
                     'cyclic dependency: {}; {} has {} as output'.format(
                         ' <- '.join([target] + beam), target, output))
 
-        # Step 5: determine what we have to lock
+        # Step 4: lock all outputs
         lockables = set(outputs)
         if 'recipe' in irule:
             lockables.add(target)
         else:
             lockables.discard(target) # in case it's in outputs
         lockables = sorted(lockables) # to prevent deadlocks
-
-        # Step 6: lock that
-        # We lock all outputs at this early stage (before we produce
-        # dependencies) so we are sure never to even try to produce one
-        # target from two different worker threads.
-        try:
-            # Release semaphore until after we have all the target locks we
-            # need, to prevent deadlocks.
-            self.semaphore.release()
+        with contextlib.ExitStack() as stack:
+            # Acquire locks. Release is automatic on leaving the context of the
+            # stack. We lock all outputs at this early stage (before we produce
+            # dependencies) so we are sure never to even try to produce one
+            # target from two different worker threads.
             for lockable in lockables:
-                self.get_target_lock(lockable).acquire()
-            self.semaphore.acquire()
+                debug(3, 'locking %s', lockable)
+                stack.enter_context(self.get_target_lock(lockable))
+                debug(3, 'locked %s', lockable)
 
-            # Step 7: abort if target already done
+            # Step 5: abort if target already done
             result = self.get_result(target)
             debug(3, 'retrieved result for {}: {}'.format(target, result))
             if result is None:
@@ -757,7 +713,7 @@ class Production:
             else:
                 raise result
 
-            # Step 8: do target and mark as done
+            # Step 6: do target and mark as done
             try:
                 result = self.do_target(target, irule, outputs, beam,
                                         neutral_targets, pretend_up_to_date)
@@ -767,9 +723,6 @@ class Production:
             except BaseException as e:
                 self.set_result(target, e)
                 raise e
-        finally:
-            for lockable in lockables:
-                self.get_target_lock(lockable).release()
             
     def do_target(self, target, irule, outputs, beam, neutral_targets,
             pretend_up_to_date):
@@ -788,13 +741,13 @@ class Production:
         # Step 2: determine direct dependencies
         ddeps = list_ddeps(irule)
 
-        debug(2, '%s depends on %s', target, ', '.join(ddeps))
+        debug(2, '%s depends on %$', target, ', '.join(ddeps))
 
         # Step 3: make dependencies up to date
         results = self.produce_targets(ddeps, beam,
             neutral_targets, pretend_up_to_date)
 
-        # Step 5: determine if target is out of date
+        # Step 4: determine if target is out of date
         out_of_date = False
         if irule['type'] == 'task':
             out_of_date = True
@@ -811,15 +764,14 @@ class Production:
                     out_of_date = True
                     break
 
-        # Step 6: abort if up to date or pretending
+        # Step 5: abort if up to date or pretending
         if (not out_of_date) or pretend_up_to_date:
             return ProductionResult(False, mtime(target))
 
-        # Step 7: run recipe
-        self.run_recipe(target, irule, outputs, len(beam) - 1)
-
-        # Step 8: return result
-        return ProductionResult(True, mtime(target))
+        # Step 6: run recipe with semaphore bounding parallel recipes
+        with self.semaphore:
+            self.run_recipe(target, irule, outputs, len(beam) - 1)
+            return ProductionResult(True, mtime(target))
 
     def run_recipe(self, target, irule, outputs, depth):
         # Step 1: abort if shutting down
