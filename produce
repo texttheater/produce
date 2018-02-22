@@ -660,6 +660,10 @@ class Production:
         because it runs inside worker threads.
         """
 
+        # Step 0: abort if shutting down
+        if self.is_shutting_down():
+            raise ProduceError('shutting down')
+
         # Step 1: catch cycles
         if target in beam:
             raise ProduceError('cyclic dependency: {}'.format(' <- '.join(
