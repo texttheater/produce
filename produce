@@ -884,7 +884,7 @@ def produce(args=[]):
         else:
             raise ProduceError(
                 "Don't know what to produce. Specify a target on the command "
-                "line or a default target in produce.ini")
+                "line or a default target in {}.".format(args.file))
     # Add command-line targets to set of targets to build unconditionally, if
     # desired:
     if args.always_build_specified:
