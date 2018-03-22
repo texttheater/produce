@@ -745,7 +745,7 @@ class Production:
         # Step 2: determine direct dependencies
         ddeps = list_ddeps(irule)
 
-        debug(2, '%s depends on %s', target, ', '.join(ddeps))
+        debug(2, '%s <- %s', target, ', '.join(ddeps))
 
         # Step 3: make dependencies up to date
         results = self.produce_targets(ddeps, beam,
