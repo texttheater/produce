@@ -754,17 +754,22 @@ class Production:
         # Step 4: determine if target is out of date
         out_of_date = False
         if irule['type'] == 'task':
+            debug(2, '%s is out of date because it is a task', target)
             out_of_date = True
         elif self.always_build_for(target):
+            debug(2, '%s is out of date because it is set to always build', target)
             out_of_date = True
         elif irule['type'] == 'file' and not os.path.exists(target):
+            debug(2, '%s is out of date because it is a file and does not exist', target)
             out_of_date = True
         else:
-            for result in results:
+            for ddep, result in zip(ddeps, results):
                 if result.updated:
+                    debug(2, '%s is out of date because its direct dependency %s was updated', target, ddep)
                     out_of_date = True
                     break
                 elif result.mtime > mtime(target):
+                    debug(2, '%s is out of date because its direct dependency %s is newer', target, ddep)
                     out_of_date = True
                     break
 
