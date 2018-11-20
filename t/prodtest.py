@@ -83,6 +83,12 @@ class ProduceTestCase(unittest.TestCase):
         for f in notUpdated:
             self.assertLessEqual(self.qmtime(f), times[f])
 
+    def assertTakesLessThan(self, seconds):
+        return _TakesLessThan(seconds, self)
+
+    def assertTakesMoreThan(self, seconds):
+        return _TakesMoreThan(seconds, self)
+
     def assertFileContents(self, fileName, expectedContents):
         with open(fileName) as f:
             actualContents = f.read()
@@ -120,3 +126,31 @@ class ProduceTestCase(unittest.TestCase):
 
     def removeFile(self, name):
         os.unlink(name)
+
+
+class _TakesLessThan:
+
+    def __init__(self, seconds, test):
+        self.seconds = seconds
+        self.test = test
+
+    def __enter__(self):
+        self.start = time.time()
+
+    def __exit__(self, *args):
+        stop = time.time()
+        self.test.assertLess(stop - self.start, self.seconds)
+
+
+class _TakesMoreThan:
+
+    def __init__(self, seconds, test):
+        self.seconds = seconds
+        self.test = test
+
+    def __enter__(self):
+        self.start = time.time()
+
+    def __exit__(self, *args):
+        stop = time.time()
+        self.test.assertGreater(stop - self.start, self.seconds)
