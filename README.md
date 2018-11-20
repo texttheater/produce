@@ -892,6 +892,10 @@ special meaning to Produce:
     <dd>See <a href="#rules-with-multiple-outputs">Rules with multiple outputs</a></dd>
     <dt><code>outputs</code></dt>
     <dd>See <a href="#rules-with-multiple-outputs">Rules with multiple outputs</a></dd>
+    <dt><code>jobs</code></dt>
+    <dd>Use this to indicate how many parallel jobs the recipe of this rule
+    will run (default `1`). Produce will reserve that many job slots for this
+    recipe.</dd>
 </dl>
 
 ### In the global section

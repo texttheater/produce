@@ -480,6 +480,7 @@ def create_irule(target, rules, globes):
             debug(4, 'instantiated rule for target %s has varz: %s', target,
                   {k: v for (k, v) in varz.items() if k != '__builtins__'})
             result['type'] = result.get('type', 'file')
+            result['jobs'] = result.get('jobs', '1')
             debug(3, 'target type: %s', result['type'])
             if result['type'] not in ('file', 'task'):
                 raise ProduceError('unknown type {} for target {}'.format(
@@ -490,7 +491,7 @@ def create_irule(target, rules, globes):
     if os.path.exists(target):
         # Although there is no rule to make the target, the target is a file
         # that exists, so we can use it as an ingredient.
-        return {'target': target, 'type': 'file'}
+        return {'target': target, 'type': 'file', 'jobs': '1'}
     raise ProduceError('no rule to produce {}'.format(target))
 
 
@@ -779,7 +780,8 @@ class Production:
 
         # Step 6: run recipe with semaphore bounding parallel recipes
         with contextlib.ExitStack() as stack:
-            stack.enter_context(self.semaphore)
+            for _ in range(min(self.jobs, int(irule['jobs']))):
+                stack.enter_context(self.semaphore)
             self.run_recipe(target, irule, outputs, len(beam) - 1)
             return ProductionResult(True, mtime(target))
 
