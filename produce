@@ -778,7 +778,8 @@ class Production:
             return ProductionResult(False, mtime(target))
 
         # Step 6: run recipe with semaphore bounding parallel recipes
-        with self.semaphore:
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(self.semaphore)
             self.run_recipe(target, irule, outputs, len(beam) - 1)
             return ProductionResult(True, mtime(target))
 
