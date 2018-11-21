@@ -557,8 +557,9 @@ class Production:
         self.always_build_these = always_build_these
         self.jobs = jobs
         self.semaphore = threading.BoundedSemaphore(jobs)
+        self.sema_lock = threading.Lock() # controls access to semaphore
         self.pretend_up_to_date = pretend_up_to_date
-        self.lock = threading.Lock()
+        self.lock = threading.Lock() # controls access to certain fields
         self.target_locks = collections.defaultdict(threading.Lock)
 
     def produce(self, targets):
@@ -779,11 +780,35 @@ class Production:
             return ProductionResult(False, mtime(target))
 
         # Step 6: run recipe with semaphore bounding parallel recipes
-        with contextlib.ExitStack() as stack:
-            for _ in range(min(self.jobs, int(irule['jobs']))):
-                stack.enter_context(self.semaphore)
+        to_hold = min(self.jobs, int(irule['jobs']))
+        holding = 0
+        # Acquire semaphore to_hold times. We use sema_lock to make sure only
+        # one thread tries to acquire semaphore its needed number of times at a
+        # time. Not sure this is necessary, but there miiight be livelock
+        # situations without this precaution.
+        self.sema_lock.acquire()
+        while holding < to_hold:
+            if not self.semaphore.acquire(timeout=0.1):
+                # Timeout - release everything, sleep, try again.
+                # If we didn't do this and held on to the holds we got, there
+                # could be deadlocks.
+                while holding > 0:
+                    self.semaphore.release()
+                    holding -= 1
+                self.sema_lock.release()
+                time.sleep(0.1)
+                self.sema_lock.acquire()
+            else:
+                holding += 1
+        self.sema_lock.release()
+        # run recipe, then release semaphore to_hold times
+        try:
             self.run_recipe(target, irule, outputs, len(beam) - 1)
             return ProductionResult(True, mtime(target))
+        finally:
+            while holding > 0:
+                self.semaphore.release()
+                holding -= 1
 
     def run_recipe(self, target, irule, outputs, depth):
         # Step 1: abort if shutting down
