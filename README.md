@@ -30,6 +30,7 @@ code, like setting up replicable scientific experiments.
   - [Whitespace and indentation in values](#whitespace-and-indentation-in-values)
   - [The prelude](#the-prelude)
   - [`shell`: choosing the recipe interpreter](#shell-choosing-the-recipe-interpreter)
+  - [Running jobs in parallel](#running-jobs-in-parallel)
   - [Dependency files](#dependency-files)
   - [Rules with multiple outputs](#rules-with-multiple-outputs)
     - [“Sideways” dependencies](#sideways-dependencies)
@@ -631,6 +632,39 @@ for execution. If you would rather write your recipe in `zsh`, `perl`, `python`
 or any other language, that’s no problem. Just specify the interpreter in the
 `shell` attribute of the rule.
 
+### Running jobs in parallel
+
+Use the `-j JOBS` command line option to specify the number of jobs Produce
+runs in parallel. By default, Produce reserves one job slot for each recipe.
+For recipes that run multiple parallel jobs themselves, it is recommended to
+specify the number of jobs via the `jobs` attribute. Produce will then reserve
+that many job slots for this recipe (but no more than `JOBS`).
+
+Here is an example where the target `b` is created by a recipe that runs in
+parallel:
+
+    [a]
+    deps = b c d
+    recipe = touch %{target}
+
+    [b]
+    dep.input = input.txt
+    dep.my_script = ./my_script.sh
+    jobs = 8
+    recipe = parallel --gnu -n %{jobs} -k %{input} > %{target}
+
+    [c]
+    dep.my_script = ./my_script.sh
+    recipe = %{my_script} c > %{target}
+
+    [d]
+    dep.my_script = ./my_script.sh
+    recipe = %{my_script} d > %{target}
+
+Running `produce -j 8 a` will run up to 8 jobs in parallel. In this example,
+the recipes for `c` and `d` may run in parallel. The recipe for `b` will not
+run in parallel with any other recipe because it uses all 8 job slots.
+
 ### Dependency files
 
 Sometimes the question which other files a file depends on is more complex and
@@ -893,9 +927,7 @@ special meaning to Produce:
     <dt><code>outputs</code></dt>
     <dd>See <a href="#rules-with-multiple-outputs">Rules with multiple outputs</a></dd>
     <dt><code>jobs</code></dt>
-    <dd>Use this to indicate how many parallel jobs the recipe of this rule
-    will run (default `1`). Produce will reserve that many job slots for this
-    recipe.</dd>
+    <dd>See <a href="#running-jobs-in-parallel">Running jobs in parallel</a></dd>
 </dl>
 
 ### In the global section
