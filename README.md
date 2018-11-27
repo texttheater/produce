@@ -46,8 +46,8 @@ code, like setting up replicable scientific experiments.
 Requirements
 ------------
 
-* A Unix-like operating system such as Linux or Mac OS X. Cygwin under Windows
-  may also work.
+* A Unix-like operating system such as Linux or Mac OS X. Windows Subsystem for
+  Linux may also work.
 * Python 3.4 or higher
 * Git (for downloading Produce)
 
