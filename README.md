@@ -652,7 +652,7 @@ parallel:
     dep.input = input.txt
     dep.my_script = ./my_script.sh
     jobs = 8
-    recipe = parallel --gnu -n %{jobs} -k %{input} > %{target}
+    recipe = parallel --gnu -n %{jobs} -k %{my_script} %{input} > %{target}
 
     [c]
     dep.my_script = ./my_script.sh
