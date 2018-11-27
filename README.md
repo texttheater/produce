@@ -39,6 +39,7 @@ code, like setting up replicable scientific experiments.
   - [In rules](#in-rules)
   - [In the global section](#in-the-global-section)
 - [Getting in touch](#getting-in-touch)
+- [Acknowledgments](#acknowledgments)
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
