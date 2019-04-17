@@ -11,7 +11,6 @@ code, like setting up replicable scientific experiments.
 **Table of Contents** 
 
 - [Requirements](#requirements)
-- [Obtaining Produce](#obtaining-produce)
 - [Installing Produce](#installing-produce)
 - [Usage](#usage)
 - [Motivation](#motivation)
@@ -51,10 +50,15 @@ Requirements
 * Python 3.4 or higher
 * Git (for downloading Produce)
 
-Obtaining Produce
------------------
+Installing Produce
+------------------
 
-Donload Produce by running the following command in a convenient location:
+Install the latest release using pip:
+
+    pip3 install produce
+
+Or get the development version by running the following command in a convenient
+location:
 
     git clone https://github.com/texttheater/produce
 
@@ -62,9 +66,6 @@ This will create a directory called `produce`. To update to the latest version
 of Produce later, you can just go into that directory and run:
 
     git pull
-
-Installing Produce
-------------------
 
 The `produce` directory contains an executable Python script also called
 `produce`. This is all you need to run Produce. Just make sure it is in your
