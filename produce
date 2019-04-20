@@ -247,7 +247,7 @@ def process_commandline(args=None):
 
 SECTIONHEAD_PATTERN = re.compile(r'^\[(.*)\]\s*$')
 AVPAIR_PATTERN = re.compile(r'^(\S+?)\s*=\s*(.*)$', re.DOTALL)
-VALUECONT_PATTERN = re.compile(r'^(\s)(.*)$', re.DOTALL)
+VALUECONT_PATTERN = re.compile(r'^(\s+)(.*)$', re.DOTALL)
 COMMENT_PATTERN = re.compile(r'^\s*#.*$')
 BLANKLINE_PATTERN = re.compile(r'^\s*$')
 
