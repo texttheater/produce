@@ -3,6 +3,9 @@
 # C extensions
 *.so
 
+# Virtual environments
+.venv
+
 # Packages
 *.egg
 *.egg-info
@@ -25,6 +28,9 @@ pip-log.txt
 .coverage
 .tox
 nosetests.xml
+
+# Tools cache
+.mypy_cache
 
 # Translations
 *.mo
