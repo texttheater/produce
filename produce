@@ -409,20 +409,23 @@ def section_name_to_regex(name, globes={}):
 def produce_pattern_to_regex(pattern, globes={}):
     ip = interpolate(pattern, globes, ignore_undefined=True, keep_escaped=True)
     regex = ''
+    groups = set() # keep track of named groups
     while ip:
         if ip.startswith('%%'):
             regex += '%'
             ip = ip[:2]
-        # FIXME When the same variable is used a second time in a pattern, we
-        # should use a *backreference* to a named group instead of a named
-        # group. Matching identical parts is useful, a second group with the
-        # same name raises an exception.
         elif ip.startswith('%{') and '}' in ip:
             # TODO check that the part between curly braces is a valid
             # Python identifier (or, eventually, expression)
             index = ip.index('}')
             variable = ip[2:index]
-            regex += '(?P<' + variable + '>.*)'
+            if variable in groups:
+                # backreference to existing group
+                regex += '(?P=' + variable + ')'
+            else:
+                # new named group
+                regex += '(?P<' + variable + '>.*)'
+                groups.add(variable)
             ip = ip[index + 1:]
         else:
             regex += re.escape(ip[:1])
