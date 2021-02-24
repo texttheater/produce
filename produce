@@ -728,6 +728,13 @@ class Production:
                                         neutral_targets, pretend_up_to_date)
                 self.set_result(target, result)
                 debug(3, 'created result for {}: {}'.format(target, repr(result)))
+                # Step 7: mark other outputs as done
+                for output in outputs:
+                    if output == target:
+                        continue
+                    output_result = ProductionResult(True, mtime(output))
+                    self.set_result(output, output_result)
+                    debug(3, 'created result for {}: {}'.format(output, repr(output_result)))
                 return result
             except BaseException as e:
                 self.set_result(target, e)
@@ -865,7 +872,7 @@ class Production:
                 debug(3, 'started subprocess')
                 while True:
                     try:
-                        debug(3, 'waiting')
+                        debug(5, 'waiting')
                         proc.wait(0.05)
                     except subprocess.TimeoutExpired:
                         pass
