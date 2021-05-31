@@ -569,7 +569,7 @@ class Production:
         self.exception = None
         self.target_result = {} # maps done targets to a ProductionResult or an exception
         try:
-            results = self.produce_targets(targets, [], [], False)
+            results = self.produce_targets(targets, [], [], [], False)
             if any(result.updated for result in results):
                 pass
             else:
@@ -619,7 +619,7 @@ class Production:
     def is_dry_run(self):
         return self.dry_run
 
-    def produce_targets(self, targets, beam, neutral_targets,
+    def produce_targets(self, targets, beam, side_beam, neutral_targets,
                         pretend_up_to_date):
         """Takes a list of targets and produces them.
 
@@ -641,7 +641,8 @@ class Production:
             # sure of never hitting the thread limit. Also we would not need
             # the build_sema anymore.
             futures = [executor.submit(self.produce_target, target, beam,
-                                       neutral_targets, pretend_up_to_date)
+                                       side_beam, neutral_targets,
+                                       pretend_up_to_date)
                        for target in targets]
             for future in concurrent.futures.as_completed(futures):
                 e = future.exception()
@@ -653,7 +654,7 @@ class Production:
         else:
             raise exception
                     
-    def produce_target(self, target, beam, neutral_targets,
+    def produce_target(self, target, beam, side_beam, neutral_targets,
                        pretend_up_to_date):
         """Handles the core production logic for a single target.
 
@@ -695,8 +696,8 @@ class Production:
                     'cyclic dependency: {}; {} has {} as output'.format(
                         ' <- '.join([target] + beam), target, output))
 
-        # Step 4: lock all outputs
-        lockables = set(outputs)
+        # Step 4: lock all outputs (exclude side_beam, already locked)
+        lockables = set(o for o in outputs if o not in side_beam)
         if 'recipe' in irule:
             lockables.add(target)
         else:
@@ -724,7 +725,7 @@ class Production:
 
             # Step 6: do target and mark as done
             try:
-                result = self.do_target(target, irule, outputs, beam,
+                result = self.do_target(target, irule, outputs, beam, side_beam,
                                         neutral_targets, pretend_up_to_date)
                 self.set_result(target, result)
                 debug(3, 'created result for {}: {}'.format(target, repr(result)))
@@ -741,10 +742,11 @@ class Production:
                 self.set_result(target, e)
                 raise e
             
-    def do_target(self, target, irule, outputs, beam, neutral_targets,
-            pretend_up_to_date):
-        # Step 0: update beam, neutral_targets, pretend_up_to_date
+    def do_target(self, target, irule, outputs, beam, side_beam,
+            neutral_targets, pretend_up_to_date):
+        # Step 0: update beam, side_beam, neutral_targets, pretend_up_to_date
         beam = [target] + beam
+        side_beam = outputs + side_beam
         if 'recipe' not in irule:
             neutral_targets = [target] + neutral_targets
         pretend_up_to_date = pretend_up_to_date or \
@@ -752,8 +754,8 @@ class Production:
 
         # Step 1: make depfile up to date, if any
         if 'depfile' in irule:
-            self.produce_targets([irule['depfile']], beam, neutral_targets,
-                                 pretend_up_to_date)
+            self.produce_targets([irule['depfile']], beam, side_beam,
+                                 neutral_targets, pretend_up_to_date)
 
         # Step 2: determine direct dependencies
         ddeps = list_ddeps(irule)
@@ -761,7 +763,7 @@ class Production:
         debug(2, '%s <- %s', target, ', '.join(ddeps))
 
         # Step 3: make dependencies up to date
-        results = self.produce_targets(ddeps, beam,
+        results = self.produce_targets(ddeps, beam, side_beam,
             neutral_targets, pretend_up_to_date)
 
         # Step 4: determine if target is out of date
