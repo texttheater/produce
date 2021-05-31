@@ -695,24 +695,51 @@ class Production:
                     'cyclic dependency: {}; {} has {} as output'.format(
                         ' <- '.join([target] + beam), target, output))
 
-        # Step 5: do target and mark as done
-        try:
-            result = self.do_target(target, irule, outputs, beam,
-                                    neutral_targets, pretend_up_to_date)
-            self.set_result(target, result)
-            debug(3, 'created result for {}: {}'.format(target, repr(result)))
-            # Step 6: mark other outputs as updated
-            if result.updated:
-                for output in outputs:
-                    if output == target:
-                        continue
-                    output_result = ProductionResult(True, mtime(output))
-                    self.set_result(output, output_result)
-                    debug(3, 'created result for {}: {}'.format(output, repr(output_result)))
-            return result
-        except BaseException as e:
-            self.set_result(target, e)
-            raise e
+        # Step 4: lock all outputs
+        lockables = set(outputs)
+        if 'recipe' in irule:
+            lockables.add(target)
+        else:
+            lockables.discard(target) # in case it's in outputs
+        lockables = sorted(lockables) # to prevent deadlocks
+        with contextlib.ExitStack() as stack:
+            # Acquire locks. Release is automatic on leaving the context of the
+            # stack. We lock all outputs at this early stage (before we produce
+            # dependencies) so we are sure never to even try to produce one
+            # target from two different worker threads.
+            for lockable in lockables:
+                debug(3, 'locking %s', lockable)
+                stack.enter_context(self.get_target_lock(lockable))
+                debug(3, 'locked %s', lockable)
+
+            # Step 5: abort if target already done
+            result = self.get_result(target)
+            debug(3, 'retrieved result for {}: {}'.format(target, result))
+            if result is None:
+                pass
+            elif isinstance(result, ProductionResult):
+                return result
+            else:
+                raise result
+
+            # Step 6: do target and mark as done
+            try:
+                result = self.do_target(target, irule, outputs, beam,
+                                        neutral_targets, pretend_up_to_date)
+                self.set_result(target, result)
+                debug(3, 'created result for {}: {}'.format(target, repr(result)))
+                # Step 7: mark other outputs as updated
+                if result.updated:
+                    for output in outputs:
+                        if output == target:
+                            continue
+                        output_result = ProductionResult(True, mtime(output))
+                        self.set_result(output, output_result)
+                        debug(3, 'created result for {}: {}'.format(output, repr(output_result)))
+                return result
+            except BaseException as e:
+                self.set_result(target, e)
+                raise e
             
     def do_target(self, target, irule, outputs, beam, neutral_targets,
             pretend_up_to_date):
@@ -737,87 +764,62 @@ class Production:
         results = self.produce_targets(ddeps, beam,
             neutral_targets, pretend_up_to_date)
 
-        # Step 4: lock all outputs
-        lockables = set(outputs)
-        if 'recipe' in irule:
-            lockables.add(target)
+        # Step 4: determine if target is out of date
+        out_of_date = False
+        if irule['type'] == 'task':
+            debug(2, '%s is out of date because it is a task', target)
+            out_of_date = True
+        elif self.always_build_for(target):
+            debug(2, '%s is out of date because it is set to always build', target)
+            out_of_date = True
+        elif irule['type'] == 'file' and not os.path.exists(target):
+            debug(2, '%s is out of date because it is a file and does not exist', target)
+            out_of_date = True
         else:
-            lockables.discard(target) # in case it's in outputs
-        lockables = sorted(lockables) # to prevent deadlocks
-        with contextlib.ExitStack() as stack:
-            # Acquire locks. Release is automatic on leaving the context of the
-            # stack.
-            for lockable in lockables:
-                debug(3, 'locking %s', lockable)
-                stack.enter_context(self.get_target_lock(lockable))
-                debug(3, 'locked %s', lockable)
+            for ddep, result in zip(ddeps, results):
+                if result.updated:
+                    debug(2, '%s is out of date because its direct dependency %s was updated', target, ddep)
+                    out_of_date = True
+                    break
+                elif result.mtime > mtime(target):
+                    debug(2, '%s is out of date because its direct dependency %s is newer', target, ddep)
+                    out_of_date = True
+                    break
 
-            # Step 5: abort if target already done
-            result = self.get_result(target)
-            debug(3, 'retrieved result for {}: {}'.format(target, result))
-            if result is None:
-                pass
-            elif isinstance(result, ProductionResult):
-                return result
-            else:
-                raise result
+        # Step 5: abort if up to date or pretending
+        if (not out_of_date) or pretend_up_to_date:
+            return ProductionResult(False, mtime(target))
 
-            # Step 6: determine if target is out of date
-            out_of_date = False
-            if irule['type'] == 'task':
-                debug(2, '%s is out of date because it is a task', target)
-                out_of_date = True
-            elif self.always_build_for(target):
-                debug(2, '%s is out of date because it is set to always build', target)
-                out_of_date = True
-            elif irule['type'] == 'file' and not os.path.exists(target):
-                debug(2, '%s is out of date because it is a file and does not exist', target)
-                out_of_date = True
-            else:
-                for ddep, result in zip(ddeps, results):
-                    if result.updated:
-                        debug(2, '%s is out of date because its direct dependency %s was updated', target, ddep)
-                        out_of_date = True
-                        break
-                    elif result.mtime > mtime(target):
-                        debug(2, '%s is out of date because its direct dependency %s is newer', target, ddep)
-                        out_of_date = True
-                        break
-
-            # Step 7: abort if up to date or pretending
-            if (not out_of_date) or pretend_up_to_date:
-                return ProductionResult(False, mtime(target))
-
-            # Step 8: run recipe with semaphore bounding parallel recipes
-            to_hold = min(self.jobs, int(irule['jobs']))
-            holding = 0
-            # Acquire semaphore to_hold times. We use sema_lock to make sure only
-            # one thread tries to acquire semaphore its needed number of times at a
-            # time. Not sure this is necessary, but there miiight be livelock
-            # situations without this precaution.
-            self.sema_lock.acquire()
-            while holding < to_hold:
-                if not self.semaphore.acquire(timeout=0.1):
-                    # Timeout - release everything, sleep, try again.
-                    # If we didn't do this and held on to the holds we got, there
-                    # could be deadlocks.
-                    while holding > 0:
-                        self.semaphore.release()
-                        holding -= 1
-                    self.sema_lock.release()
-                    time.sleep(0.1)
-                    self.sema_lock.acquire()
-                else:
-                    holding += 1
-            self.sema_lock.release()
-            # run recipe, then release semaphore to_hold times
-            try:
-                self.run_recipe(target, irule, outputs, len(beam) - 1)
-                return ProductionResult(True, mtime(target))
-            finally:
+        # Step 6: run recipe with semaphore bounding parallel recipes
+        to_hold = min(self.jobs, int(irule['jobs']))
+        holding = 0
+        # Acquire semaphore to_hold times. We use sema_lock to make sure only
+        # one thread tries to acquire semaphore its needed number of times at a
+        # time. Not sure this is necessary, but there miiight be livelock
+        # situations without this precaution.
+        self.sema_lock.acquire()
+        while holding < to_hold:
+            if not self.semaphore.acquire(timeout=0.1):
+                # Timeout - release everything, sleep, try again.
+                # If we didn't do this and held on to the holds we got, there
+                # could be deadlocks.
                 while holding > 0:
                     self.semaphore.release()
                     holding -= 1
+                self.sema_lock.release()
+                time.sleep(0.1)
+                self.sema_lock.acquire()
+            else:
+                holding += 1
+        self.sema_lock.release()
+        # run recipe, then release semaphore to_hold times
+        try:
+            self.run_recipe(target, irule, outputs, len(beam) - 1)
+            return ProductionResult(True, mtime(target))
+        finally:
+            while holding > 0:
+                self.semaphore.release()
+                holding -= 1
 
     def run_recipe(self, target, irule, outputs, depth):
         # Step 1: abort if shutting down
