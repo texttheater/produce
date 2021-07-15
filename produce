@@ -464,7 +464,7 @@ def create_irule(target, rules, globes):
                 loke = attribute.split('.')[-1]
                 if loke == 'target':
                     raise ProduceError('cannot overwrite "target" attribute '
-                                       'in rule for {}'.format(target))
+                        'in rule for {}'.format(target))
                 # Do expansions in value:
                 iv = interpolate(value, varz)
                 # Attribute retains prefix:
@@ -477,8 +477,8 @@ def create_irule(target, rules, globes):
                     break
             # If there is a condition and it isn't met, go to the next rule:
             if 'cond' in result and not ast.literal_eval(result['cond']):
-                debug(3, 'condition %s failed, trying next rule',
-                      result['cond'])
+                debug(3, 'condition %s failed for pattern %s, trying next '
+                        'rule', result['cond'], pattern)
                 continue
             debug(4, 'instantiated rule for target %s has varz: %s', target,
                   {k: v for (k, v) in varz.items() if k != '__builtins__'})
