@@ -920,6 +920,7 @@ def produce(args=[]):
     except IOError as e:
         raise ProduceError('cannot read file {}'.format(args.file), e)
     globes = {}
+    exec(raw_globes.get('prelude', ''), globes)
     for att, val in raw_globes.items():
         globes[att] = interpolate(val, globes)
     # Determine targets:
@@ -937,8 +938,6 @@ def produce(args=[]):
         always_build_these = set(targets)
     else:
         always_build_these = set()
-    # Execute prelude, with globes providing the name context:
-    exec(globes.get('prelude', ''), globes)
     # Produce:
     production = Production(rules, globes, args.dry_run, args.always_build,
                             always_build_these, args.jobs,
