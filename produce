@@ -228,13 +228,14 @@ def process_commandline(args=None):
         '-n', '--dry-run', action='store_true',
         help="""Print status messages, but do not run recipes""")
     parser.add_argument(
-        '-u', '--pretend-up-to-date', metavar='FILE', action='append',
+        '-u', '--pretend-up-to-date', metavar='PATTERN', action='append',
         default=[],
-        help="""Do not rebuild FILE or its dependencies (unless they are also
-        depended on by other targets) even if out of date, but make sure that
-        future invocations of Produce will still treat them as out of date by
-        increasing the modification times of their changed dependencies as
-        necessary.""")
+        help="""Do not rebuild targets matching PATTERN or their dependencies
+        (unless the latter are also depended on by other targets) even if out
+        of date, but make sure that future invocations of Produce will still
+        treat them as out of date by increasing the modification times of their
+        changed dependencies as necessary. PATTERN can be a Produce pattern or
+        a regular expression enclosed in forward slashes, as in rules.""")
     parser.add_argument(
         'target', nargs='*',
         help="""The target(s) to produce - if omitted, default target from
@@ -608,7 +609,7 @@ class Production:
             self.target_result[target] = result
 
     def pretend_up_to_date_for(self, target):
-        return target in self.pretend_up_to_date
+        return any(p.match(target) for p in self.pretend_up_to_date)
 
     def always_build_for(self, target):
         return self.always_build or (target in self.always_build_these)
@@ -938,10 +939,15 @@ def produce(args=[]):
         always_build_these = set(targets)
     else:
         always_build_these = set()
+    # Convert "pretend up to date" patterns to regexes:
+    pretend_up_to_date_patterns = [
+        section_name_to_regex(p)
+        for p in args.pretend_up_to_date
+    ]
     # Produce:
     production = Production(rules, globes, args.dry_run, args.always_build,
                             always_build_these, args.jobs,
-                            args.pretend_up_to_date)
+                            pretend_up_to_date_patterns)
     if _handle_signals: # HACK, see comment below
         def handler(signum, frame):
             production.register_exception(ProduceError('killed'))
