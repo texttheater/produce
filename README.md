@@ -495,34 +495,36 @@ exist.
 A number of options can be used to control Produce’s behavior, as listed in its
 help message:
 
-    usage: produce [-h] [-B | -b] [-d] [-f FILE] [-j JOBS] [-n] [-u FILE]
-                   [target [target ...]]
-    
-    positional arguments:
-      target                The target(s) to produce - if omitted, default target
-                            from Producefile is used
-    
-    optional arguments:
-      -h, --help            show this help message and exit
-      -B, --always-build    Unconditionally build all specified targets and their
-                            dependencies
-      -b, --always-build-specified
-                            Unconditionally build all specified targets, but treat
-                            their dependencies normally (only build if out of
-                            date)
-      -d, --debug           Print debugging information. Give this option multiple
-                            times for more information.
-      -f FILE, --file FILE  Use FILE as a Producefile
-      -j JOBS, --jobs JOBS  Specifies the number of jobs (recipes) to run
-                            simultaneously
-      -n, --dry-run         Print status messages, but do not run recipes
-      -u FILE, --pretend-up-to-date FILE
-                            Do not rebuild FILE or its dependencies (unless they
-                            are also depended on by other targets) even if out of
-                            date, but make sure that future invocations of Produce
-                            will still treat them as out of date by increasing the
-                            modification times of their changed dependencies as
-                            necessary.
+usage: produce [-h] [-B | -b] [-d] [-f FILE] [-j JOBS] [-n] [-u PATTERN]
+               [target ...]
+
+positional arguments:
+  target                The target(s) to produce - if omitted, default target
+                        from Producefile is used
+
+options:
+  -h, --help            show this help message and exit
+  -B, --always-build    Unconditionally build all specified targets and their
+                        dependencies
+  -b, --always-build-specified
+                        Unconditionally build all specified targets, but treat
+                        their dependencies normally (only build if out of
+                        date)
+  -d, --debug           Print debugging information. Give this option multiple
+                        times for more information.
+  -f FILE, --file FILE  Use FILE as a Producefile
+  -j JOBS, --jobs JOBS  Specifies the number of jobs (recipes) to run
+                        simultaneously
+  -n, --dry-run         Print status messages, but do not run recipes
+  -u PATTERN, --pretend-up-to-date PATTERN
+                        Do not rebuild targets matching PATTERN or their
+                        dependencies (unless the latter are also depended on
+                        by other targets) even if out of date, but make sure
+                        that future invocations of Produce will still treat
+                        them as out of date by increasing the modification
+                        times of their changed dependencies as necessary.
+                        PATTERN can be a Produce pattern or a regular
+                        expression enclosed in forward slashes, as in rules.
 
 ### Status and debugging messages
 
