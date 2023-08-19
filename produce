@@ -13,6 +13,7 @@ import ast
 import collections
 import concurrent.futures
 import contextlib
+from dataclasses import dataclass
 import errno
 import logging
 import os
@@ -25,6 +26,7 @@ import sys
 import tempfile
 import threading
 import time
+from typing import Iterable, List, Tuple
 
 
 ### PLANNED FEATURES ##########################################################
@@ -252,14 +254,18 @@ VALUECONT_PATTERN = re.compile(r'^(\s+)(.*)$', re.DOTALL)
 COMMENT_PATTERN = re.compile(r'^\s*#.*$')
 BLANKLINE_PATTERN = re.compile(r'^\s*$')
 
+@dataclass
+class Section:
+    name: str
+    avpairs: List[Tuple[str, str]]
 
-def parse_inifile(f):
+def parse_inifile(f) -> Iterable[Section]:
     in_block = False
     current_name = None
     current_avpairs = None
 
     def current_section():
-        return current_name, [(a, v.strip()) for (a, v) in current_avpairs]
+        return Section(current_name, [(a, v.strip()) for (a, v) in current_avpairs])
 
     def extend_current_value(string):
         a, v = current_avpairs.pop()
@@ -307,18 +313,18 @@ def interpret_sections(sections):
     raw_globes = {}
     rules = []
     at_beginning = True
-    for name, avpairs in sections:
+    for section in sections:
         if at_beginning:
             at_beginning = False
-            if name == '':
-                raw_globes = collections.OrderedDict(avpairs)
+            if section.name == '':
+                raw_globes = collections.OrderedDict(section.avpairs)
                 continue
-        if name == '':
+        if section.name == '':
             raise ProduceError('The global section (headed []) is only allowed'
                                ' at the beginning of the Producefile.')
         else:
-            rules.append((section_name_to_regex(name),
-                          collections.OrderedDict(avpairs)))
+            rules.append((section_name_to_regex(section.name),
+                          collections.OrderedDict(section.avpairs)))
     return raw_globes, rules
 
 
