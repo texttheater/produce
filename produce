@@ -263,10 +263,16 @@ class SourcePosition:
         return f'{self.path}:{self.line}'
 
 @dataclass
+class AVPair:
+    pos: SourcePosition
+    att: str
+    val: str
+
+@dataclass
 class Section:
     pos: SourcePosition
     name: str
-    avpairs: List[Tuple[str, str]]
+    avpairs: List[AVPair]
 
 def parse_inifile(f) -> Iterable[Section]:
     in_block = False
@@ -278,12 +284,12 @@ def parse_inifile(f) -> Iterable[Section]:
         return Section(
             SourcePosition(f.name, current_lineno),
             current_name,
-            [(a, v.strip()) for (a, v) in current_avpairs]
+            [AVPair(p.pos, p.att, p.val.strip()) for p in current_avpairs],
         )
 
     def extend_current_value(string):
-        a, v = current_avpairs.pop()
-        current_avpairs.append((a, v + string))
+        p = current_avpairs.pop()
+        current_avpairs.append(AVPair(p.pos, p.att, p.val + string))
 
     for lineno, line in enumerate(f, start=1):
         match = SECTIONHEAD_PATTERN.match(line)
@@ -301,7 +307,8 @@ def parse_inifile(f) -> Iterable[Section]:
         if in_block:
             match = AVPAIR_PATTERN.match(line)
             if match:
-                current_avpairs.append((match.group(1), match.group(2)))
+                pos = SourcePosition(f.name, lineno)
+                current_avpairs.append(AVPair(pos, match.group(1), match.group(2)))
                 current_valuecont_pattern = VALUECONT_PATTERN
                 continue
             if current_avpairs:
@@ -332,14 +339,16 @@ def interpret_sections(sections):
         if at_beginning:
             at_beginning = False
             if section.name == '':
-                raw_globes = collections.OrderedDict(section.avpairs)
+                # FIXME get p.pos into the rules somehow for SLD
+                raw_globes = collections.OrderedDict((p.att, p.val) for p in section.avpairs)
                 continue
         if section.name == '':
             raise ProduceError('The global section (headed []) is only allowed'
                                ' at the beginning of the Producefile.')
         else:
+            # FIXME get p.pos into the rules somehow for SLD
             rules.append((section_name_to_regex(section.name),
-                          collections.OrderedDict(section.avpairs)))
+                          collections.OrderedDict((p.att, p.val) for p in section.avpairs)))
     return raw_globes, rules
 
 
