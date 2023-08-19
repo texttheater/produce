@@ -255,17 +255,31 @@ COMMENT_PATTERN = re.compile(r'^\s*#.*$')
 BLANKLINE_PATTERN = re.compile(r'^\s*$')
 
 @dataclass
+class SourcePosition:
+    path: str
+    line: int
+
+    def __str__(self):
+        return f'{self.path}:{self.line}'
+
+@dataclass
 class Section:
+    pos: SourcePosition
     name: str
     avpairs: List[Tuple[str, str]]
 
 def parse_inifile(f) -> Iterable[Section]:
     in_block = False
+    current_lineno = None
     current_name = None
     current_avpairs = None
 
     def current_section():
-        return Section(current_name, [(a, v.strip()) for (a, v) in current_avpairs])
+        return Section(
+            SourcePosition(f.name, current_lineno),
+            current_name,
+            [(a, v.strip()) for (a, v) in current_avpairs]
+        )
 
     def extend_current_value(string):
         a, v = current_avpairs.pop()
@@ -277,6 +291,7 @@ def parse_inifile(f) -> Iterable[Section]:
             if in_block:
                 yield current_section()
             in_block = True
+            current_lineno = lineno
             current_name = match.group(1)
             current_avpairs = []
             continue
@@ -304,7 +319,7 @@ def parse_inifile(f) -> Iterable[Section]:
             if current_avpairs:
                 extend_current_value(os.linesep)
             continue
-        raise ProduceError('invalid line {} in Producefile'.format(lineno))
+        raise ProduceError(f'invalid line at {SourcePosition(f.name, lineno)}')
     if in_block:
         yield current_section()
 
