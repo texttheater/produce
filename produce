@@ -338,16 +338,15 @@ class Rule:
     avpairs: List[AVPair]
 
 
-def interpret_sections(sections):
-    raw_globes = {}
+def interpret_sections(sections) -> Tuple[List[AVPair], List[Rule]]:
+    raw_globes = []
     rules = []
     at_beginning = True
     for section in sections:
         if at_beginning:
             at_beginning = False
             if section.name == '':
-                # FIXME get p.pos into the rules somehow for SLD
-                raw_globes = collections.OrderedDict((p.att, p.val) for p in section.avpairs)
+                raw_globes = section.avpairs
                 continue
         if section.name == '':
             raise ProduceError('The global section (headed []) is only allowed'
@@ -959,9 +958,11 @@ def produce(args=[]):
     except IOError as e:
         raise ProduceError('cannot read file {}'.format(args.file), e)
     globes = {}
-    exec(raw_globes.get('prelude', ''), globes)
-    for att, val in raw_globes.items():
-        globes[att] = interpolate(val, globes)
+    for avpair in raw_globes:
+        if avpair.att == 'prelude':
+            exec(avpair.val, globes)
+    for avpair in raw_globes:
+        globes[avpair.att] = interpolate(avpair.val, globes)
     # Determine targets:
     targets = args.target
     if not targets:
