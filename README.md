@@ -47,7 +47,7 @@ Requirements
 
 * A Unix-like operating system such as Linux or Mac OS X. Windows Subsystem for
   Linux may also work.
-* Python 3.4 or higher
+* Python 3.6 or higher
 * Git (for downloading Produce)
 
 Installing Produce
