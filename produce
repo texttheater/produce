@@ -331,6 +331,13 @@ def parse_inifile(f) -> Iterable[Section]:
         yield current_section()
 
 
+@dataclass
+class Rule:
+    pos: SourcePosition
+    pattern: re.Pattern
+    avpairs: List[AVPair]
+
+
 def interpret_sections(sections):
     raw_globes = {}
     rules = []
@@ -345,10 +352,11 @@ def interpret_sections(sections):
         if section.name == '':
             raise ProduceError('The global section (headed []) is only allowed'
                                ' at the beginning of the Producefile.')
-        else:
-            # FIXME get p.pos into the rules somehow for SLD
-            rules.append((section_name_to_regex(section.name),
-                          collections.OrderedDict((p.att, p.val) for p in section.avpairs)))
+        rules.append(Rule(
+            section.pos,
+            section_name_to_regex(section.name),
+            section.avpairs
+        ))
     return raw_globes, rules
 
 
@@ -478,8 +486,8 @@ def produce_pattern_to_regex(pattern, globes={}):
 def create_irule(target, rules, globes):
     debug(3, 'looking for rule to produce %s', target)
     # Go through rules until a pattern matches the target:
-    for pattern, avdict in rules:
-        match = pattern.match(target)
+    for rule in rules:
+        match = rule.pattern.match(target)
         if match:
             # Dictionary representing the instantiated rule:
             result = {}
@@ -490,26 +498,26 @@ def create_irule(target, rules, globes):
             result['target'] = target
             varz['target'] = target
             # Process attributes and their values:
-            for attribute, value in avdict.items():
+            for avpair in rule.avpairs:
                 # Remove prefix from attribute to get local variable name:
-                loke = attribute.split('.')[-1]
+                loke = avpair.att.split('.')[-1]
                 if loke == 'target':
                     raise ProduceError('cannot overwrite "target" attribute '
                         'in rule for {}'.format(target))
                 # Do expansions in value:
-                iv = interpolate(value, varz)
+                iv = interpolate(avpair.val, varz)
                 # Attribute retains prefix:
-                result[attribute] = iv
+                result[avpair.att] = iv
                 # Local variable does not retain prefix:
                 varz[loke] = iv
                 # If there is a condition and it isn't met, we stop processing
                 # attributes so they don't raise errors:
-                if attribute == 'cond' and not ast.literal_eval(iv):
+                if avpair.att == 'cond' and not ast.literal_eval(iv):
                     break
             # If there is a condition and it isn't met, go to the next rule:
             if 'cond' in result and not ast.literal_eval(result['cond']):
                 debug(3, 'condition %s failed for pattern %s, trying next '
-                        'rule', result['cond'], pattern)
+                        'rule', result['cond'], rule.pattern)
                 continue
             debug(4, 'instantiated rule for target %s has varz: %s', target,
                   {k: v for (k, v) in varz.items() if k != '__builtins__'})
@@ -521,7 +529,7 @@ def create_irule(target, rules, globes):
                     target_type, target))
             return result
         else:
-            debug(3, 'pattern %s did not match, trying next rule', pattern)
+            debug(3, 'pattern %s did not match, trying next rule', rule.pattern)
     if os.path.exists(target):
         # Although there is no rule to make the target, the target is a file
         # that exists, so we can use it as an ingredient.
