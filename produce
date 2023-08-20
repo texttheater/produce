@@ -87,7 +87,7 @@ def rename_if_exists(src, dst):
 
 def touch(path, timestamp):
     if subprocess.call(['touch', '-d', '@{}'.format(timestamp), path]) != 0:
-        raise ProduceError('failed to touch {}'.format(path))
+        raise ProduceError(f'failed to touch {path}')
 
 
 def shlex_join(value):
@@ -329,7 +329,7 @@ def parse_inifile(f) -> Iterable[Section]:
             if current_avpairs:
                 extend_current_value(os.linesep)
             continue
-        raise ProduceError(f'invalid line at {SourcePosition(f.name, lineno)}')
+        raise ProduceError('invalid line', pos=SourcePosition(f.name, lineno))
     if in_block:
         yield current_section()
 
@@ -352,11 +352,13 @@ def interpret_sections(sections) -> Tuple[List[AVPair], List[Rule]]:
                 raw_globes = section.avpairs
                 continue
         if section.name == '':
-            raise ProduceError('The global section (headed []) is only allowed'
-                               ' at the beginning of the Producefile.')
+            raise ProduceError(
+                'non-initial global section (headed [])',
+                pos=section.pos,
+            )
         rules.append(Rule(
             section.pos,
-            section_name_to_regex(section.name),
+            section_name_to_regex(section.name, pos=section.pos),
             section.avpairs
         ))
     return raw_globes, rules
@@ -365,7 +367,7 @@ def interpret_sections(sections) -> Tuple[List[AVPair], List[Rule]]:
 ### PATTERN MATCHING AND INTERPOLATION ########################################
 
 
-def interpolate(string, varz, ignore_undefined=False, keep_escaped=False):
+def interpolate(string, varz, ignore_undefined=False, keep_escaped=False, pos=None):
     debug(4, 'interpolate called with varz: %s', {k: v for (k, v) in
           varz.items() if k != '__builtins__'})
     original_string = string
@@ -404,24 +406,22 @@ def interpolate(string, varz, ignore_undefined=False, keep_escaped=False):
                         string = string[index + 1:]
                         break
                     else:
-                        raise ProduceError(
-                            'name error in expression "{}" in string "{}": {}'
-                            .format(expression, original_string, e))
+                        raise ProduceError(f'name error: {e}', pos=pos)
                 start = index + 1
             else:
                 if error:
                     raise ProduceError(
-                        '{} evaluating expression "{}" in pattern "{}": {}'
-                        .format(error.__class__.__name__, expression,
-                                original_string, error))
+                        f'{error.__class__.__name__}: {error}',
+                        pos=pos,
+                        cause=error,
+                    )
                 else:
-                    raise ProduceError(
-                        'could not parse expression in string {}'
-                        .format(original_string))
+                    raise ProduceError(f'could not parse expression', pos=pos)
         elif string.startswith('%'):
             raise ProduceError(
-                '% must be followed by % or variable name in curly braces in '
-                'pattern {}'.format(original_string))
+                '% must be followed by % or variable name in curly braces',
+                pos=pos,
+            )
         else:
             result += string[:1]
             string = string[1:]
@@ -437,18 +437,18 @@ def value_to_string(value):
         return str(value)
 
 
-def section_name_to_regex(name, globes={}):
+def section_name_to_regex(name, globes={}, pos=None):
     if len(name) > 1 and name.startswith('/') and name.endswith('/'):
         try:
             return re.compile(name[1:-1])
         except Exception as e:
-            raise ProduceError('{} in regex {}'.format(e, name))
+            raise ProduceError(f'{e}', pos=pos)
     else:
-        return produce_pattern_to_regex(name, globes)
+        return produce_pattern_to_regex(name, globes, pos=pos)
 
 
-def produce_pattern_to_regex(pattern, globes={}):
-    ip = interpolate(pattern, globes, ignore_undefined=True, keep_escaped=True)
+def produce_pattern_to_regex(pattern, globes={}, pos=None):
+    ip = interpolate(pattern, globes, ignore_undefined=True, keep_escaped=True, pos=pos)
     regex = ''
     groups = set() # keep track of named groups
     while ip:
@@ -510,10 +510,12 @@ def create_irule(target, rules, globes) -> InstantiatedRule:
                 # Remove prefix from attribute to get local variable name:
                 loke = avpair.att.split('.')[-1]
                 if loke == 'target':
-                    raise ProduceError('cannot overwrite "target" attribute '
-                        'in rule for {}'.format(target))
+                    raise ProduceError(
+                        'cannot overwrite "target" attribute',
+                        pos=avpair.pos,
+                    )
                 # Do expansions in value:
-                iv = interpolate(avpair.val, varz)
+                iv = interpolate(avpair.val, varz, pos=avpair.pos)
                 # Attribute retains prefix:
                 result[avpair.att] = iv
                 # Local variable does not retain prefix:
@@ -533,8 +535,7 @@ def create_irule(target, rules, globes) -> InstantiatedRule:
             result['jobs'] = result.get('jobs', '1')
             debug(3, 'target type: %s', result['type'])
             if result['type'] not in ('file', 'task'):
-                raise ProduceError('unknown type {} for target {}'.format(
-                    result['type'], target))
+                raise ProduceError(f'unknown type {result["type"]}', pos=rule.pos)
             return InstantiatedRule(rule.pos, result)
         else:
             debug(3, 'pattern %s did not match, trying next rule', rule.pattern)
@@ -560,8 +561,9 @@ def list_ddeps(irule):
                 result.extend(read_depfile(value))
             except IOError as e:
                 raise ProduceError(
-                    'cannot read depfile {} for target {}'
-                    .format(value, irule['target']), e)
+                    f'cannot read depfile {value}',
+                    pos=irule.pos,
+                )
     return result
 
 
@@ -936,7 +938,7 @@ class Production:
                 if proc.returncode == 0:
                     success = True
                 else:
-                    raise ProduceError('recipe failed: {}'.format(repr(recipe)))
+                    raise ProduceError('recipe failed', pos=irule.pos)
             finally:
                 if success:
                     status_info('complete', target, depth)
@@ -968,13 +970,13 @@ def produce(args=[]):
             debug(3, 'parsed sections: %s', sections)
             raw_globes, rules = interpret_sections(sections)
     except IOError as e:
-        raise ProduceError('cannot read file {}'.format(args.file), e)
+        raise ProduceError(f'cannot read file {args.file}', cause=e)
     globes = {}
     for avpair in raw_globes:
         if avpair.att == 'prelude':
             exec(avpair.val, globes)
     for avpair in raw_globes:
-        globes[avpair.att] = interpolate(avpair.val, globes)
+        globes[avpair.att] = interpolate(avpair.val, globes, pos=avpair.pos)
     # Determine targets:
     targets = args.target
     if not targets:
@@ -983,7 +985,8 @@ def produce(args=[]):
         else:
             raise ProduceError(
                 "Don't know what to produce. Specify a target on the command "
-                "line or a default target in {}.".format(args.file))
+                f"line or a default target in {args.file}."
+            )
     # Add command-line targets to set of targets to build unconditionally, if
     # desired:
     if args.always_build_specified:
