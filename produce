@@ -196,8 +196,11 @@ def status_error(message, target, depth):
 
 class ProduceError(Exception):
 
-    def __init__(self, message, cause=None):
+    def __init__(self, message, pos = None, cause=None):
+        if pos:
+            message += ' at ' + str(pos)
         Exception.__init__(self, message)
+        self.pos = pos
         self.cause = cause
 
 
