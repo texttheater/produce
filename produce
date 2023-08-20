@@ -26,7 +26,7 @@ import sys
 import tempfile
 import threading
 import time
-from typing import Iterable, List, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
 
 
 ### PLANNED FEATURES ##########################################################
@@ -479,13 +479,19 @@ def produce_pattern_to_regex(pattern, globes={}):
 ### INSTANTIATED RULES ########################################################
 
 
-# An instantiated rule is represented by a dict that corresponds to one rule
-# section from the Producefile, with the values already expanded. There are two
-# special keys: target (the target as matched by the section header), and type,
-# which must be one of file and task and defaults to file.
+@dataclass
+class InstantiatedRule:
+    pos: Optional[SourcePosition]
+    """avdict contains the expanded value from the rule.
+
+    There are two special keys: target (the target as matched by the section
+    header), and type (which must be one of file and task and defaults to
+    file).
+    """
+    avdict: Dict[str, str]
 
 
-def create_irule(target, rules, globes):
+def create_irule(target, rules, globes) -> InstantiatedRule:
     debug(3, 'looking for rule to produce %s', target)
     # Go through rules until a pattern matches the target:
     for rule in rules:
@@ -528,20 +534,23 @@ def create_irule(target, rules, globes):
             debug(3, 'target type: %s', result['type'])
             if result['type'] not in ('file', 'task'):
                 raise ProduceError('unknown type {} for target {}'.format(
-                    target_type, target))
-            return result
+                    result['type'], target))
+            return InstantiatedRule(rule.pos, result)
         else:
             debug(3, 'pattern %s did not match, trying next rule', rule.pattern)
     if os.path.exists(target):
         # Although there is no rule to make the target, the target is a file
         # that exists, so we can use it as an ingredient.
-        return {'target': target, 'type': 'file', 'jobs': '1'}
+        return InstantiatedRule(
+            None,
+            {'target': target, 'type': 'file', 'jobs': '1'},
+        )
     raise ProduceError('no rule to produce {}'.format(target))
 
 
 def list_ddeps(irule):
     result = []
-    for key, value in irule.items():
+    for key, value in irule.avdict.items():
         if key.startswith('dep.'):
             result.append(value)
         elif key == 'deps':
@@ -558,7 +567,7 @@ def list_ddeps(irule):
 
 def list_outputs(irule):
     result = []
-    for key, value in irule.items():
+    for key, value in irule.avdict.items():
         if key.startswith('out.'):
             result.append(value)
         elif key == 'outputs':
@@ -739,7 +748,7 @@ class Production:
 
         # Step 4: lock all outputs (exclude side_beam, already locked)
         lockables = set(o for o in outputs if o not in side_beam)
-        if 'recipe' in irule:
+        if 'recipe' in irule.avdict:
             lockables.add(target)
         else:
             lockables.discard(target) # in case it's in outputs
@@ -788,14 +797,14 @@ class Production:
         # Step 0: update beam, side_beam, neutral_targets, pretend_up_to_date
         beam = [target] + beam
         side_beam = outputs + side_beam
-        if 'recipe' not in irule:
+        if 'recipe' not in irule.avdict:
             neutral_targets = [target] + neutral_targets
         pretend_up_to_date = pretend_up_to_date or \
                 self.pretend_up_to_date_for(target)
 
         # Step 1: make depfile up to date, if any
-        if 'depfile' in irule:
-            self.produce_targets([irule['depfile']], beam, side_beam,
+        if 'depfile' in irule.avdict:
+            self.produce_targets([irule.avdict['depfile']], beam, side_beam,
                                  neutral_targets, pretend_up_to_date)
 
         # Step 2: determine direct dependencies
@@ -809,13 +818,13 @@ class Production:
 
         # Step 4: determine if target is out of date
         out_of_date = False
-        if irule['type'] == 'task':
+        if irule.avdict['type'] == 'task':
             debug(2, '%s is out of date because it is a task', target)
             out_of_date = True
         elif self.always_build_for(target):
             debug(2, '%s is out of date because it is set to always build', target)
             out_of_date = True
-        elif irule['type'] == 'file' and not os.path.exists(target):
+        elif irule.avdict['type'] == 'file' and not os.path.exists(target):
             debug(2, '%s is out of date because it is a file and does not exist', target)
             out_of_date = True
         else:
@@ -834,7 +843,7 @@ class Production:
             return ProductionResult(False, mtime(target))
 
         # Step 6: run recipe with semaphore bounding parallel recipes
-        to_hold = min(self.jobs, int(irule['jobs']))
+        to_hold = min(self.jobs, int(irule.avdict['jobs']))
         holding = 0
         # Acquire semaphore to_hold times. We use sema_lock to make sure only
         # one thread tries to acquire semaphore its needed number of times at a
@@ -870,11 +879,11 @@ class Production:
             raise ProduceError('aborting due to shutdown')
 
         # Step 2: abort if no recipe
-        if not 'recipe' in irule:
+        if not 'recipe' in irule.avdict:
             return
 
         # Step 3: initial status info
-        if irule['type'] == 'task':
+        if irule.avdict['type'] == 'task':
             status_info('running task', target, depth)
         else:
             if os.path.exists(target):
@@ -883,8 +892,8 @@ class Production:
                 status_info('building file', target, depth)
 
         # Step 4: preprocess recipe and determine executable
-        recipe = irule['recipe']
-        executable = irule.get('shell', 'bash')
+        recipe = irule.avdict['recipe']
+        executable = irule.avdict.get('shell', 'bash')
         if recipe.startswith('\n'):
             recipe = recipe[1:]
 
@@ -897,7 +906,7 @@ class Production:
             return
 
         # Step 7: remove old backup files, if any
-        if irule['type'] == 'file':
+        if irule.avdict['type'] == 'file':
             backup_name = target + '~'
             remove_if_exists(backup_name)
         for output in outputs:
@@ -932,7 +941,7 @@ class Production:
                 if success:
                     status_info('complete', target, depth)
                 else:
-                    if irule['type'] == 'file':
+                    if irule.avdict['type'] == 'file':
                         backup_name = target + '~'
                         debug(2, 'renaming %s to %s', target, backup_name)
                         rename_if_exists(target, backup_name)
