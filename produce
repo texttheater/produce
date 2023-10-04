@@ -490,6 +490,32 @@ class InstantiatedRule:
     """
     avdict: Dict[str, str]
 
+    def ddeps(self):
+        result = []
+        for key, value in self.avdict.items():
+            if key.startswith('dep.'):
+                result.append(value)
+            elif key == 'deps':
+                result.extend(shlex.split(value))
+            elif key == 'depfile':
+                try:
+                    result.extend(read_depfile(value))
+                except IOError as e:
+                    raise ProduceError(
+                        f'cannot read depfile {value}',
+                        pos=self.pos,
+                    )
+        return result
+
+    def outputs(self):
+        result = []
+        for key, value in self.avdict.items():
+            if key.startswith('out.'):
+                result.append(value)
+            elif key == 'outputs':
+                result.extend(shlex.split(value))
+        return result
+
 
 def create_irule(target, rules, globes) -> InstantiatedRule:
     debug(3, 'looking for rule to produce %s', target)
@@ -547,34 +573,6 @@ def create_irule(target, rules, globes) -> InstantiatedRule:
             {'target': target, 'type': 'file', 'jobs': '1'},
         )
     raise ProduceError('no rule to produce {}'.format(target))
-
-
-def list_ddeps(irule):
-    result = []
-    for key, value in irule.avdict.items():
-        if key.startswith('dep.'):
-            result.append(value)
-        elif key == 'deps':
-            result.extend(shlex.split(value))
-        elif key == 'depfile':
-            try:
-                result.extend(read_depfile(value))
-            except IOError as e:
-                raise ProduceError(
-                    f'cannot read depfile {value}',
-                    pos=irule.pos,
-                )
-    return result
-
-
-def list_outputs(irule):
-    result = []
-    for key, value in irule.avdict.items():
-        if key.startswith('out.'):
-            result.append(value)
-        elif key == 'outputs':
-            result.extend(shlex.split(value))
-    return result
 
 
 def read_depfile(filename):
@@ -731,7 +729,7 @@ class Production:
         irule = self.create_irule(target)
 
         # Step 3: determine side outputs
-        outputs = list_outputs(irule)
+        outputs = irule.outputs()
 
         # Step 4: catch soft cycles
         # We don't want to allow a target to depend on a rule that will produce
@@ -810,7 +808,7 @@ class Production:
                                  neutral_targets, pretend_up_to_date)
 
         # Step 2: determine direct dependencies
-        ddeps = list_ddeps(irule)
+        ddeps = irule.ddeps()
 
         debug(2, '%s <- %s', target, ', '.join(ddeps))
 
